@@ -132,6 +132,12 @@ public class KnativeConfig implements PlatformConfiguration {
     ProbeConfig readinessProbe;
 
     /**
+     * Prometheus configuration
+     */
+    @ConfigItem
+    PrometheusConfig prometheus;
+
+    /**
      * Volume mounts
      */
     @ConfigItem
@@ -281,6 +287,10 @@ public class KnativeConfig implements PlatformConfiguration {
         return readinessProbe;
     }
 
+    public PrometheusConfig getPrometheusConfig() {
+        return prometheus;
+    }
+
     public Map<String, MountConfig> getMounts() {
         return mounts;
     }
@@ -400,4 +410,14 @@ public class KnativeConfig implements PlatformConfiguration {
      * Global autoscaling configuration.
      */
     GlobalAutoScalingConfig globalAutoScaling;
+
+    /**
+     * The name of the revision.
+     */
+    Optional<String> revisionName;
+
+    /**
+     * Traffic configuration.
+     */
+    Map<String, TrafficConfig> traffic;
 }

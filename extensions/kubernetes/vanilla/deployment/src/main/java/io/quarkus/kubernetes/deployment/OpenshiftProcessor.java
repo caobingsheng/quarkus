@@ -3,7 +3,7 @@ package io.quarkus.kubernetes.deployment;
 
 import static io.quarkus.kubernetes.deployment.Constants.DEFAULT_HTTP_PORT;
 import static io.quarkus.kubernetes.deployment.Constants.DEFAULT_S2I_IMAGE_NAME;
-import static io.quarkus.kubernetes.deployment.Constants.DEPLOYMENT;
+import static io.quarkus.kubernetes.deployment.Constants.DEPLOYMENT_CONFIG;
 import static io.quarkus.kubernetes.deployment.Constants.HTTP_PORT;
 import static io.quarkus.kubernetes.deployment.Constants.OPENSHIFT;
 import static io.quarkus.kubernetes.deployment.Constants.OPENSHIFT_APP_RUNTIME;
@@ -34,6 +34,7 @@ import io.quarkus.container.spi.BaseImageInfoBuildItem;
 import io.quarkus.container.spi.ContainerImageInfoBuildItem;
 import io.quarkus.container.spi.ContainerImageLabelBuildItem;
 import io.quarkus.deployment.Capabilities;
+import io.quarkus.deployment.Capability;
 import io.quarkus.deployment.annotations.BuildProducer;
 import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.builditem.ApplicationInfoBuildItem;
@@ -60,7 +61,7 @@ public class OpenshiftProcessor {
     @BuildStep
     public void checkOpenshift(BuildProducer<KubernetesDeploymentTargetBuildItem> deploymentTargets) {
         List<String> targets = KubernetesConfigUtil.getUserSpecifiedDeploymentTargets();
-        deploymentTargets.produce(new KubernetesDeploymentTargetBuildItem(OPENSHIFT, DEPLOYMENT, OPENSHIFT_PRIORITY,
+        deploymentTargets.produce(new KubernetesDeploymentTargetBuildItem(OPENSHIFT, DEPLOYMENT_CONFIG, OPENSHIFT_PRIORITY,
                 targets.contains(OPENSHIFT)));
     }
 
@@ -89,8 +90,8 @@ public class OpenshiftProcessor {
         result.addAll(KubernetesCommonHelper.createPlatformConfigurators(config));
         result.addAll(KubernetesCommonHelper.createGlobalConfigurators(ports));
 
-        if (!capabilities.isCapabilityPresent(Capabilities.CONTAINER_IMAGE_S2I)
-                && !capabilities.isCapabilityPresent(Capabilities.CONTAINER_IMAGE_OPENSHIFT)) {
+        if (!capabilities.isPresent(Capability.CONTAINER_IMAGE_S2I)
+                && !capabilities.isPresent(Capability.CONTAINER_IMAGE_OPENSHIFT)) {
             result.add(new ConfiguratorBuildItem(new DisableS2iConfigurator()));
 
             image.flatMap(ContainerImageInfoBuildItem::getRegistry).ifPresent(r -> {
@@ -127,7 +128,8 @@ public class OpenshiftProcessor {
         String name = ResourceNameUtil.getResourceName(config, applicationInfo);
 
         Optional<Project> project = KubernetesCommonHelper.createProject(applicationInfo, outputTarget, packageConfig);
-        result.addAll(KubernetesCommonHelper.createDecorators(project, OPENSHIFT, name, config, metricsConfiguration,
+        result.addAll(KubernetesCommonHelper.createDecorators(project, OPENSHIFT, name, config,
+                metricsConfiguration,
                 annotations, labels, command,
                 ports, livenessPath, readinessPath, roles, roleBindings));
 
@@ -190,8 +192,8 @@ public class OpenshiftProcessor {
         result.add(new DecoratorBuildItem(OPENSHIFT, new ApplyHttpGetActionPortDecorator(port)));
 
         // Hanlde non-s2i
-        if (!capabilities.isCapabilityPresent(Capabilities.CONTAINER_IMAGE_S2I)
-                && !capabilities.isCapabilityPresent(Capabilities.CONTAINER_IMAGE_OPENSHIFT)) {
+        if (!capabilities.isPresent(Capability.CONTAINER_IMAGE_S2I)
+                && !capabilities.isPresent(Capability.CONTAINER_IMAGE_OPENSHIFT)) {
             result.add(new DecoratorBuildItem(OPENSHIFT, new RemoveDeploymentTriggerDecorator()));
         }
 

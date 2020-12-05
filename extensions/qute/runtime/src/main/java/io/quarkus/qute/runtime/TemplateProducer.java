@@ -9,7 +9,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.CompletionStage;
 import java.util.function.Consumer;
 
@@ -29,6 +28,7 @@ import io.quarkus.qute.Variant;
 import io.quarkus.qute.api.ResourcePath;
 import io.quarkus.qute.runtime.QuteRecorder.QuteContext;
 import io.smallrye.mutiny.Multi;
+import io.smallrye.mutiny.Uni;
 
 @Singleton
 public class TemplateProducer {
@@ -113,7 +113,7 @@ public class TemplateProducer {
         }
 
         @Override
-        public Set<Expression> getExpressions() {
+        public List<Expression> getExpressions() {
             throw new UnsupportedOperationException("Injected templates do not support getExpressions()");
         }
 
@@ -157,6 +157,11 @@ public class TemplateProducer {
         @Override
         public Multi<String> createMulti() {
             return templateInstance().createMulti();
+        }
+
+        @Override
+        public Uni<String> createUni() {
+            return templateInstance().createUni();
         }
 
         @Override

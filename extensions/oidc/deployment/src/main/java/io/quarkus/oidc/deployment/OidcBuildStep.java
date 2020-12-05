@@ -35,12 +35,12 @@ import io.quarkus.oidc.runtime.OidcJsonWebTokenProducer;
 import io.quarkus.oidc.runtime.OidcRecorder;
 import io.quarkus.oidc.runtime.OidcTokenCredentialProducer;
 import io.quarkus.oidc.runtime.TenantConfigBean;
+import io.quarkus.runtime.TlsConfig;
 import io.quarkus.vertx.core.deployment.CoreVertxBuildItem;
 import io.smallrye.jwt.auth.cdi.ClaimValueProducer;
 import io.smallrye.jwt.auth.cdi.CommonJwtProducer;
 import io.smallrye.jwt.auth.cdi.JsonValueProducer;
 import io.smallrye.jwt.auth.cdi.RawClaimTypeProducer;
-import io.smallrye.jwt.build.impl.JwtProviderImpl;
 
 public class OidcBuildStep {
     public static final DotName DOTNAME_SECURITY_EVENT = DotName.createSimple(SecurityEvent.class.getName());
@@ -78,8 +78,6 @@ public class OidcBuildStep {
                 .addBeanClass(DefaultTenantConfigResolver.class)
                 .addBeanClass(DefaultTokenStateManager.class);
         additionalBeans.produce(builder.build());
-
-        reflectiveClasses.produce(new ReflectiveClassBuildItem(true, true, JwtProviderImpl.class));
     }
 
     @BuildStep(onlyIf = IsEnabled.class)
@@ -92,10 +90,11 @@ public class OidcBuildStep {
     public SyntheticBeanBuildItem setup(
             OidcConfig config,
             OidcRecorder recorder,
-            CoreVertxBuildItem vertxBuildItem) {
+            CoreVertxBuildItem vertxBuildItem,
+            TlsConfig tlsConfig) {
         return SyntheticBeanBuildItem.configure(TenantConfigBean.class).unremovable().types(TenantConfigBean.class)
-                .supplier(recorder.setup(config, vertxBuildItem.getVertx()))
-                .scope(Singleton.class)
+                .supplier(recorder.setup(config, vertxBuildItem.getVertx(), tlsConfig))
+                .scope(Singleton.class) // this should have been @ApplicationScoped but fails for some reason
                 .setRuntimeInit()
                 .done();
     }

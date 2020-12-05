@@ -38,6 +38,10 @@
 
         <skipDocs>false</skipDocs>
         <skip.gradle.tests>false</skip.gradle.tests>
+
+        <sonar.projectKey>quarkusio_quarkus</sonar.projectKey>
+        <sonar.organization>quarkusio</sonar.organization>
+        <sonar.host.url>https://sonarcloud.io</sonar.host.url>
     </properties>
 
     <modules>
@@ -50,6 +54,7 @@
         <module>independent-projects/qute</module>
         <module>independent-projects/tools</module>
         <module>independent-projects/enforcer-rules</module>
+        <module>independent-projects/resteasy-reactive</module>
 
         <!-- BOMs and parent POM -->
         <module>bom/application</module>

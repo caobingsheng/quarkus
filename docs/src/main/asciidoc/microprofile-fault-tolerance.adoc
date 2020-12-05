@@ -51,7 +51,7 @@ mvn io.quarkus:quarkus-maven-plugin:{quarkus-version}:create \
     -DprojectArtifactId=microprofile-fault-tolerance-quickstart \
     -DclassName="org.acme.microprofile.faulttolerance.CoffeeResource" \
     -Dpath="/coffee" \
-    -Dextensions="smallrye-fault-tolerance, resteasy-jsonb"
+    -Dextensions="smallrye-fault-tolerance, resteasy-jackson"
 cd microprofile-fault-tolerance-quickstart
 ----
 
@@ -172,7 +172,7 @@ public class CoffeeResource {
     private static final Logger LOGGER = Logger.getLogger(CoffeeResource.class);
 
     @Inject
-    private CoffeeRepositoryService coffeeRepository;
+    CoffeeRepositoryService coffeeRepository;
 
     private AtomicLong counter = new AtomicLong(0);
 

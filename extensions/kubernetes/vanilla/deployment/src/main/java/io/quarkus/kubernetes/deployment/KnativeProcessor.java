@@ -1,7 +1,7 @@
 package io.quarkus.kubernetes.deployment;
 
-import static io.quarkus.kubernetes.deployment.Constants.DEPLOYMENT;
 import static io.quarkus.kubernetes.deployment.Constants.KNATIVE;
+import static io.quarkus.kubernetes.deployment.Constants.SERVICE;
 import static io.quarkus.kubernetes.spi.KubernetesDeploymentTargetBuildItem.DEFAULT_PRIORITY;
 
 import java.util.ArrayList;
@@ -20,6 +20,8 @@ import io.dekorate.knative.decorator.ApplyLocalContainerConcurrencyDecorator;
 import io.dekorate.knative.decorator.ApplyLocalTargetUtilizationPercentageDecorator;
 import io.dekorate.knative.decorator.ApplyMaxScaleDecorator;
 import io.dekorate.knative.decorator.ApplyMinScaleDecorator;
+import io.dekorate.knative.decorator.ApplyRevisionNameDecorator;
+import io.dekorate.knative.decorator.ApplyTrafficDecorator;
 import io.dekorate.kubernetes.config.EnvBuilder;
 import io.dekorate.kubernetes.decorator.AddConfigMapDataDecorator;
 import io.dekorate.kubernetes.decorator.AddConfigMapResourceProvidingDecorator;
@@ -52,12 +54,13 @@ import io.quarkus.kubernetes.spi.KubernetesRoleBuildItem;
 public class KnativeProcessor {
 
     private static final int KNATIVE_PRIORITY = DEFAULT_PRIORITY;
+    private static final String LATEST_REVISION = "latest";
 
     @BuildStep
     public void checkKnative(BuildProducer<KubernetesDeploymentTargetBuildItem> deploymentTargets) {
         List<String> targets = KubernetesConfigUtil.getUserSpecifiedDeploymentTargets();
         deploymentTargets.produce(
-                new KubernetesDeploymentTargetBuildItem(KNATIVE, DEPLOYMENT, KNATIVE_PRIORITY, targets.contains(KNATIVE)));
+                new KubernetesDeploymentTargetBuildItem(KNATIVE, SERVICE, KNATIVE_PRIORITY, targets.contains(KNATIVE)));
     }
 
     @BuildStep
@@ -107,7 +110,8 @@ public class KnativeProcessor {
         String name = ResourceNameUtil.getResourceName(config, applicationInfo);
 
         Optional<Project> project = KubernetesCommonHelper.createProject(applicationInfo, outputTarget, packageConfig);
-        result.addAll(KubernetesCommonHelper.createDecorators(project, KNATIVE, name, config, metricsConfiguration, annotations,
+        result.addAll(KubernetesCommonHelper.createDecorators(project, KNATIVE, name, config,
+                metricsConfiguration, annotations,
                 labels, command,
                 ports, livenessPath, readinessPath, roles, roleBindings));
 
@@ -191,6 +195,22 @@ public class KnativeProcessor {
 
         //In Knative its expected that all http ports in probe are ommitted (so we set them to null).
         result.add(new DecoratorBuildItem(KNATIVE, new ApplyHttpGetActionPortDecorator(null)));
+
+        //Traffic Splitting
+        config.revisionName.ifPresent(r -> {
+            result.add(new DecoratorBuildItem(KNATIVE, new ApplyRevisionNameDecorator(name, r)));
+        });
+
+        config.traffic.forEach((k, v) -> {
+            TrafficConfig traffic = v;
+            //Revision name is K unless we have the edge name of a revision named 'latest' which is not really the latest (in which case use null).
+            boolean latestRevision = traffic.latestRevision.get();
+            String revisionName = !latestRevision && LATEST_REVISION.equals(k) ? null : k;
+            String tag = traffic.tag.orElse(null);
+            long percent = traffic.percent.orElse(100L);
+            result.add(new DecoratorBuildItem(KNATIVE,
+                    new ApplyTrafficDecorator(name, revisionName, latestRevision, percent, tag)));
+        });
         return result;
     }
 }

@@ -72,7 +72,9 @@ public class HttpSecurityRecorder {
                             authenticator.sendChallenge(event).subscribe().with(new Consumer<Boolean>() {
                                 @Override
                                 public void accept(Boolean aBoolean) {
-                                    event.response().end();
+                                    if (!event.response().ended()) {
+                                        event.response().end();
+                                    }
                                 }
                             }, new Consumer<Throwable>() {
                                 @Override
@@ -96,7 +98,7 @@ public class HttpSecurityRecorder {
                     }
                 });
 
-                Uni<SecurityIdentity> potentialUser = authenticator.attemptAuthentication(event).cache();
+                Uni<SecurityIdentity> potentialUser = authenticator.attemptAuthentication(event).memoize().indefinitely();
                 if (proactiveAuthentication) {
                     potentialUser
                             .subscribe().withSubscriber(new UniSubscriber<SecurityIdentity>() {
@@ -166,7 +168,7 @@ public class HttpSecurityRecorder {
                                     }
                                     return Uni.createFrom().item(securityIdentity);
                                 }
-                            }).on().termination(new Functions.TriConsumer<SecurityIdentity, Throwable, Boolean>() {
+                            }).onTermination().invoke(new Functions.TriConsumer<SecurityIdentity, Throwable, Boolean>() {
                                 @Override
                                 public void accept(SecurityIdentity identity, Throwable throwable, Boolean aBoolean) {
                                     if (identity != null) {
@@ -184,7 +186,7 @@ public class HttpSecurityRecorder {
                                         }
                                     }
                                 }
-                            }).cache();
+                            }).memoize().indefinitely();
                     event.put(QuarkusHttpUser.DEFERRED_IDENTITY_KEY, lazyUser);
                     event.next();
                 }

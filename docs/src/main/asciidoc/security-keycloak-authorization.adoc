@@ -73,7 +73,7 @@ Create a new project with the following command:
 mvn io.quarkus:quarkus-maven-plugin:{quarkus-version}:create \
     -DprojectGroupId=org.acme \
     -DprojectArtifactId=security-keycloak-authorization-quickstart \
-    -Dextensions="oidc,keycloak-authorization,resteasy-jsonb" \
+    -Dextensions="oidc,keycloak-authorization,resteasy-jackson" \
     -DnoExamples
 cd security-keycloak-authorization-quickstart
 ----
@@ -107,7 +107,7 @@ As you can see from the source code below it is just a regular JAX-RS resource:
 
 [source,java]
 ----
-package org.acme.security.keycloak.authorization;;
+package org.acme.security.keycloak.authorization;
 
 import javax.inject.Inject;
 import javax.ws.rs.GET;
@@ -149,7 +149,7 @@ The source code for the `/api/admin` endpoint is also very simple:
 
 [source,java]
 ----
-package org.acme.security.keycloak.authorization;;
+package org.acme.security.keycloak.authorization;
 
 import javax.ws.rs.GET;
 import javax.ws.rs.Path;
@@ -318,7 +318,7 @@ public class ProtectedResource {
     @GET
     public CompletionStage<List<Permission>> get() {
         return identity.checkPermission(new AuthPermission("{resource_name}"))
-                .thenCompose(granted -> {
+                .transform(granted -> {
                     if (granted) {
                         return CompletableFuture.completedFuture(doGetState());
                     }

@@ -8,7 +8,6 @@
         <artifactId>quarkus-integration-tests-parent</artifactId>
         <groupId>io.quarkus</groupId>
         <version>999-SNAPSHOT</version>
-        <relativePath>../</relativePath>
     </parent>
 
     <artifactId>quarkus-integration-test-reactive-pg-client</artifactId>
@@ -135,7 +134,7 @@
             <id>test-postgresql</id>
             <activation>
                 <property>
-                    <name>test-postgresql</name>
+                    <name>test-containers</name>
                 </property>
             </activation>
             <build>
@@ -216,7 +215,7 @@
             <id>docker-postgresql</id>
             <activation>
                 <property>
-                    <name>docker</name>
+                    <name>start-containers</name>
                 </property>
             </activation>
             <properties>

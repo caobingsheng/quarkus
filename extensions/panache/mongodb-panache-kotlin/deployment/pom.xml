@@ -6,7 +6,6 @@
         <artifactId>quarkus-mongodb-panache-kotlin-parent</artifactId>
         <groupId>io.quarkus</groupId>
         <version>999-SNAPSHOT</version>
-        <relativePath>../</relativePath>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
@@ -14,6 +13,10 @@
     <name>Quarkus - MongoDB with Panache - Kotlin Deployment</name>
 
     <dependencies>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-kotlin-deployment</artifactId>
+        </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-mongodb-panache-kotlin</artifactId>

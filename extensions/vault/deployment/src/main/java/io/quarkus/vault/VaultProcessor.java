@@ -1,7 +1,5 @@
 package io.quarkus.vault;
 
-import java.util.OptionalInt;
-
 import org.jboss.jandex.DotName;
 
 import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
@@ -14,9 +12,10 @@ import io.quarkus.deployment.builditem.CombinedIndexBuildItem;
 import io.quarkus.deployment.builditem.ExtensionSslNativeSupportBuildItem;
 import io.quarkus.deployment.builditem.FeatureBuildItem;
 import io.quarkus.deployment.builditem.IndexDependencyBuildItem;
-import io.quarkus.deployment.builditem.RunTimeConfigurationSourceBuildItem;
+import io.quarkus.deployment.builditem.RunTimeConfigurationSourceValueBuildItem;
 import io.quarkus.deployment.builditem.SslNativeConfigBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.ReflectiveClassBuildItem;
+import io.quarkus.runtime.TlsConfig;
 import io.quarkus.smallrye.health.deployment.spi.HealthBuildItem;
 import io.quarkus.vault.runtime.Base64StringDeserializer;
 import io.quarkus.vault.runtime.Base64StringSerializer;
@@ -24,8 +23,8 @@ import io.quarkus.vault.runtime.VaultRecorder;
 import io.quarkus.vault.runtime.VaultServiceProducer;
 import io.quarkus.vault.runtime.client.dto.VaultModel;
 import io.quarkus.vault.runtime.config.VaultBuildTimeConfig;
-import io.quarkus.vault.runtime.config.VaultConfigSource;
 import io.quarkus.vault.runtime.config.VaultRuntimeConfig;
+import io.quarkus.vault.runtime.health.VaultHealthCheck;
 
 public class VaultProcessor {
 
@@ -57,12 +56,6 @@ public class VaultProcessor {
     }
 
     @BuildStep
-    void setUpConfigFile(BuildProducer<RunTimeConfigurationSourceBuildItem> configSourceConsumer) {
-        configSourceConsumer.produce(new RunTimeConfigurationSourceBuildItem(
-                VaultConfigSource.class.getName(), OptionalInt.of(150)));
-    }
-
-    @BuildStep
     AdditionalBeanBuildItem registerAdditionalBeans() {
         return new AdditionalBeanBuildItem.Builder()
                 .setUnremovable()
@@ -73,14 +66,15 @@ public class VaultProcessor {
 
     @Record(ExecutionTime.RUNTIME_INIT)
     @BuildStep
-    void configure(VaultRecorder recorder, VaultBuildTimeConfig buildTimeConfig, VaultRuntimeConfig serverConfig) {
-        recorder.configureRuntimeProperties(buildTimeConfig, serverConfig);
+    public RunTimeConfigurationSourceValueBuildItem configure(VaultRecorder recorder, VaultBuildTimeConfig buildTimeConfig,
+            VaultRuntimeConfig serverConfig, TlsConfig tlsConfig) {
+        return new RunTimeConfigurationSourceValueBuildItem(
+                recorder.configureRuntimeProperties(buildTimeConfig, serverConfig, tlsConfig));
     }
 
     @BuildStep
     HealthBuildItem addHealthCheck(VaultBuildTimeConfig config) {
-        return new HealthBuildItem("io.quarkus.vault.runtime.health.VaultHealthCheck",
-                config.health.enabled);
+        return new HealthBuildItem(VaultHealthCheck.class.getName(), config.health.enabled);
     }
 
 }

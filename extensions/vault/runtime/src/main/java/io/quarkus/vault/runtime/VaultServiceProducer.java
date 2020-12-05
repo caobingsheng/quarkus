@@ -10,8 +10,6 @@ import io.quarkus.vault.VaultKVSecretEngine;
 import io.quarkus.vault.VaultSystemBackendEngine;
 import io.quarkus.vault.VaultTOTPSecretEngine;
 import io.quarkus.vault.VaultTransitSecretEngine;
-import io.quarkus.vault.runtime.config.VaultBuildTimeConfig;
-import io.quarkus.vault.runtime.config.VaultRuntimeConfig;
 
 @ApplicationScoped
 public class VaultServiceProducer {
@@ -56,9 +54,5 @@ public class VaultServiceProducer {
     @PreDestroy
     public void close() {
         VaultManager.reset();
-    }
-
-    public void setVaultConfigs(VaultBuildTimeConfig buildTimeConfig, VaultRuntimeConfig serverConfig) {
-        VaultManager.init(buildTimeConfig, serverConfig);
     }
 }

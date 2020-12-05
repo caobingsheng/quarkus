@@ -24,7 +24,6 @@
         <groupId>io.quarkus</groupId>
         <artifactId>quarkus-reactive-mysql-client-parent</artifactId>
         <version>999-SNAPSHOT</version>
-        <relativePath>../</relativePath>
     </parent>
 
     <artifactId>quarkus-reactive-mysql-client-deployment</artifactId>
@@ -109,7 +108,7 @@
             <id>test-mariadb</id>
             <activation>
                 <property>
-                    <name>test-mariadb</name>
+                    <name>test-containers</name>
                 </property>
             </activation>
             <build>
@@ -127,7 +126,7 @@
             <id>docker-mariadb</id>
             <activation>
                 <property>
-                    <name>docker</name>
+                    <name>start-containers</name>
                 </property>
             </activation>
             <properties>

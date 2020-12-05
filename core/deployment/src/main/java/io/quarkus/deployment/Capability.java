@@ -28,6 +28,7 @@ public enum Capability {
     RESTEASY,
     RESTEASY_JSON,
     RESTEASY_MUTINY,
+    QUARKUS_REST,
     JWT,
     TIKA,
     MONGODB_PANACHE,
@@ -50,6 +51,7 @@ public enum Capability {
     CONTAINER_IMAGE_S2I,
     CONTAINER_IMAGE_OPENSHIFT,
     HIBERNATE_ORM,
+    HIBERNATE_ENVERS,
     HIBERNATE_REACTIVE,
     HIBERNATE_VALIDATOR,
     /**

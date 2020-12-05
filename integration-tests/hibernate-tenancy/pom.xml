@@ -7,7 +7,6 @@
         <artifactId>quarkus-integration-tests-parent</artifactId>
         <groupId>io.quarkus</groupId>
         <version>999-SNAPSHOT</version>
-        <relativePath>../</relativePath>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
@@ -178,7 +177,7 @@
             <id>test-mariadb</id>
             <activation>
                 <property>
-                    <name>test-mariadb</name>
+                    <name>test-containers</name>
                 </property>
             </activation>
             <build>
@@ -261,7 +260,7 @@
             <id>docker-mariadb</id>
             <activation>
                 <property>
-                    <name>docker</name>
+                    <name>start-containers</name>
                 </property>
             </activation>
             <properties>

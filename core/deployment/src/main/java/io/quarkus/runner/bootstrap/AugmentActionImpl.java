@@ -7,6 +7,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
@@ -21,6 +22,7 @@ import io.quarkus.bootstrap.app.AdditionalDependency;
 import io.quarkus.bootstrap.app.ArtifactResult;
 import io.quarkus.bootstrap.app.AugmentAction;
 import io.quarkus.bootstrap.app.AugmentResult;
+import io.quarkus.bootstrap.app.ClassChangeInformation;
 import io.quarkus.bootstrap.app.CuratedApplication;
 import io.quarkus.bootstrap.app.QuarkusBootstrap;
 import io.quarkus.bootstrap.classloading.QuarkusClassLoader;
@@ -90,7 +92,7 @@ public class AugmentActionImpl implements AugmentAction {
             throw new IllegalStateException("Can only create a production application when using NORMAL launch mode");
         }
         ClassLoader classLoader = curatedApplication.createDeploymentClassLoader();
-        BuildResult result = runAugment(true, Collections.emptySet(), classLoader, ArtifactResultBuildItem.class);
+        BuildResult result = runAugment(true, Collections.emptySet(), null, classLoader, ArtifactResultBuildItem.class);
 
         String debugSourcesDir = BootstrapDebug.DEBUG_SOURCES_DIR;
         if (debugSourcesDir != null) {
@@ -131,19 +133,21 @@ public class AugmentActionImpl implements AugmentAction {
         }
         ClassLoader classLoader = curatedApplication.createDeploymentClassLoader();
         @SuppressWarnings("unchecked")
-        BuildResult result = runAugment(true, Collections.emptySet(), classLoader, NON_NORMAL_MODE_OUTPUTS);
+        BuildResult result = runAugment(true, Collections.emptySet(), null, classLoader, NON_NORMAL_MODE_OUTPUTS);
         return new StartupActionImpl(curatedApplication, result);
     }
 
     @Override
-    public StartupActionImpl reloadExistingApplication(boolean hasStartedSuccessfully, Set<String> changedResources) {
+    public StartupActionImpl reloadExistingApplication(boolean hasStartedSuccessfully, Set<String> changedResources,
+            ClassChangeInformation classChangeInformation) {
         if (launchMode != LaunchMode.DEVELOPMENT) {
             throw new IllegalStateException("Only application with launch mode DEVELOPMENT can restart");
         }
         ClassLoader classLoader = curatedApplication.createDeploymentClassLoader();
 
         @SuppressWarnings("unchecked")
-        BuildResult result = runAugment(!hasStartedSuccessfully, changedResources, classLoader, NON_NORMAL_MODE_OUTPUTS);
+        BuildResult result = runAugment(!hasStartedSuccessfully, changedResources, classChangeInformation, classLoader,
+                NON_NORMAL_MODE_OUTPUTS);
 
         return new StartupActionImpl(curatedApplication, result);
     }
@@ -166,7 +170,8 @@ public class AugmentActionImpl implements AugmentAction {
             final BuildChainBuilder chainBuilder = BuildChain.builder();
             chainBuilder.setClassLoader(classLoader);
 
-            ExtensionLoader.loadStepsFrom(classLoader).accept(chainBuilder);
+            ExtensionLoader.loadStepsFrom(classLoader, new Properties(),
+                    curatedApplication.getAppModel().getPlatformProperties(), LaunchMode.NORMAL, null).accept(chainBuilder);
             chainBuilder.loadProviders(classLoader);
 
             for (Consumer<BuildChainBuilder> c : chainCustomizers) {
@@ -202,7 +207,8 @@ public class AugmentActionImpl implements AugmentAction {
         }
     }
 
-    private BuildResult runAugment(boolean firstRun, Set<String> changedResources, ClassLoader deploymentClassLoader,
+    private BuildResult runAugment(boolean firstRun, Set<String> changedResources,
+            ClassChangeInformation classChangeInformation, ClassLoader deploymentClassLoader,
             Class<? extends BuildItem>... finalOutputs) {
         ClassLoader old = Thread.currentThread().getContextClassLoader();
         try {
@@ -226,9 +232,11 @@ public class AugmentActionImpl implements AugmentAction {
             builder.setLaunchMode(launchMode);
             builder.setRebuild(quarkusBootstrap.isRebuild());
             if (firstRun) {
-                builder.setLiveReloadState(new LiveReloadBuildItem(false, Collections.emptySet(), reloadContext));
+                builder.setLiveReloadState(
+                        new LiveReloadBuildItem(false, Collections.emptySet(), reloadContext, classChangeInformation));
             } else {
-                builder.setLiveReloadState(new LiveReloadBuildItem(true, changedResources, reloadContext));
+                builder.setLiveReloadState(
+                        new LiveReloadBuildItem(true, changedResources, reloadContext, classChangeInformation));
             }
             for (AdditionalDependency i : quarkusBootstrap.getAdditionalApplicationArchives()) {
                 //this gets added to the class path either way

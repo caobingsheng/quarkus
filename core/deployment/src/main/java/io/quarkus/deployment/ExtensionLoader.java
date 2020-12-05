@@ -89,6 +89,9 @@ import io.quarkus.runtime.annotations.ConfigRoot;
 import io.quarkus.runtime.annotations.Recorder;
 import io.quarkus.runtime.configuration.ConfigUtils;
 import io.quarkus.runtime.configuration.QuarkusConfigFactory;
+import io.smallrye.config.KeyMap;
+import io.smallrye.config.KeyMapBackedConfigSource;
+import io.smallrye.config.NameIterator;
 import io.smallrye.config.PropertiesConfigSource;
 import io.smallrye.config.SmallRyeConfig;
 import io.smallrye.config.SmallRyeConfigBuilder;
@@ -100,6 +103,7 @@ public final class ExtensionLoader {
     private ExtensionLoader() {
     }
 
+    private static final Logger loadLog = Logger.getLogger("io.quarkus.deployment");
     private static final Logger cfgLog = Logger.getLogger("io.quarkus.configuration");
     private static final String CONFIG_ROOTS_LIST = "META-INF/quarkus-config-roots.list";
 
@@ -162,7 +166,24 @@ public final class ExtensionLoader {
     public static Consumer<BuildChainBuilder> loadStepsFrom(ClassLoader classLoader, Properties buildSystemProps,
             LaunchMode launchMode, Consumer<ConfigBuilder> configCustomizer)
             throws IOException, ClassNotFoundException {
+        return loadStepsFrom(classLoader, buildSystemProps, Collections.emptyMap(), launchMode, configCustomizer);
+    }
 
+    /**
+     * Load all the build steps from the given class loader.
+     *
+     * @param classLoader the class loader
+     * @param buildSystemProps the build system properties to use
+     * @param platformProperties Quarkus platform properties
+     * @param launchMode launch mode
+     * @param configCustomizer configuration customizer
+     * @return a consumer which adds the steps to the given chain builder
+     * @throws IOException if the class loader could not load a resource
+     * @throws ClassNotFoundException if a build step class is not found
+     */
+    public static Consumer<BuildChainBuilder> loadStepsFrom(ClassLoader classLoader, Properties buildSystemProps,
+            Map<String, String> platformProperties, LaunchMode launchMode, Consumer<ConfigBuilder> configCustomizer)
+            throws IOException, ClassNotFoundException {
         // populate with all known types
         List<Class<?>> roots = new ArrayList<>();
         for (Class<?> clazz : ServiceUtil.classesNamedIn(classLoader, CONFIG_ROOTS_LIST)) {
@@ -184,8 +205,19 @@ public final class ExtensionLoader {
         final DefaultValuesConfigurationSource ds2 = new DefaultValuesConfigurationSource(
                 reader.getBuildTimeRunTimePatternMap());
         final PropertiesConfigSource pcs = new PropertiesConfigSource(buildSystemProps, "Build system");
-
-        builder.withSources(ds1, ds2, pcs);
+        if (platformProperties.isEmpty()) {
+            builder.withSources(ds1, ds2, pcs);
+        } else {
+            final KeyMap<String> props = new KeyMap<>(platformProperties.size());
+            for (Map.Entry<String, String> prop : platformProperties.entrySet()) {
+                props.findOrAdd(new NameIterator(prop.getKey())).putRootValue(prop.getValue());
+            }
+            final KeyMapBackedConfigSource platformConfigSource = new KeyMapBackedConfigSource("Quarkus platform",
+                    // Our default value configuration source is using an ordinal of Integer.MIN_VALUE
+                    // (see io.quarkus.deployment.configuration.DefaultValuesConfigurationSource)
+                    Integer.MIN_VALUE + 1000, props);
+            builder.withSources(ds1, ds2, platformConfigSource, pcs);
+        }
 
         if (configCustomizer != null) {
             configCustomizer.accept(builder);
@@ -294,6 +326,7 @@ public final class ExtensionLoader {
                     stepConfig = stepConfig.andThen(bsb -> bsb.consumes(buildItemClass));
                     ctorParamFns.add(bc -> bc.consumeMulti(buildItemClass));
                 } else if (isConsumerOf(parameterType, BuildItem.class)) {
+                    deprecatedProducer(parameter);
                     final Class<? extends BuildItem> buildItemClass = rawTypeOfParameter(parameterType, 0)
                             .asSubclass(BuildItem.class);
                     if (overridable) {
@@ -312,6 +345,7 @@ public final class ExtensionLoader {
                     }
                     ctorParamFns.add(bc -> (Consumer<? extends BuildItem>) bc::produce);
                 } else if (isBuildProducerOf(parameterType, BuildItem.class)) {
+                    deprecatedProducer(parameter);
                     final Class<? extends BuildItem> buildItemClass = rawTypeOfParameter(parameterType, 0)
                             .asSubclass(BuildItem.class);
                     if (overridable) {
@@ -403,6 +437,7 @@ public final class ExtensionLoader {
                 stepInstanceSetup = stepInstanceSetup
                         .andThen((bc, o) -> ReflectUtil.setFieldVal(field, o, bc.consumeMulti(buildItemClass)));
             } else if (isConsumerOf(fieldType, BuildItem.class)) {
+                deprecatedProducer(field);
                 final Class<? extends BuildItem> buildItemClass = rawTypeOfParameter(fieldType, 0).asSubclass(BuildItem.class);
                 if (overridable) {
                     if (weak) {
@@ -421,6 +456,7 @@ public final class ExtensionLoader {
                 stepInstanceSetup = stepInstanceSetup
                         .andThen((bc, o) -> ReflectUtil.setFieldVal(field, o, (Consumer<? extends BuildItem>) bc::produce));
             } else if (isBuildProducerOf(fieldType, BuildItem.class)) {
+                deprecatedProducer(field);
                 final Class<? extends BuildItem> buildItemClass = rawTypeOfParameter(fieldType, 0).asSubclass(BuildItem.class);
                 if (overridable) {
                     if (weak) {
@@ -965,6 +1001,12 @@ public final class ExtensionLoader {
                     });
         }
         return chainConfig;
+    }
+
+    private static void deprecatedProducer(final Object element) {
+        loadLog.warnf(
+                "Producing values from constructors and fields is no longer supported and will be removed in a future release: %s",
+                element);
     }
 
     protected static List<Method> getMethods(Class<?> clazz) {

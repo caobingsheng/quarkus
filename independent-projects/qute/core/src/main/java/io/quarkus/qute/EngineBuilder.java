@@ -54,7 +54,7 @@ public final class EngineBuilder {
     public EngineBuilder addDefaultSectionHelpers() {
         return addSectionHelpers(new IfSectionHelper.Factory(), new LoopSectionHelper.Factory(),
                 new WithSectionHelper.Factory(), new IncludeSectionHelper.Factory(), new InsertSectionHelper.Factory(),
-                new SetSectionHelper.Factory());
+                new SetSectionHelper.Factory(), new WhenSectionHelper.Factory());
     }
 
     public EngineBuilder addValueResolver(Supplier<ValueResolver> resolverSupplier) {
@@ -80,7 +80,7 @@ public final class EngineBuilder {
      */
     public EngineBuilder addDefaultValueResolvers() {
         return addValueResolvers(ValueResolvers.mapResolver(), ValueResolvers.mapperResolver(),
-                ValueResolvers.mapEntryResolver(), ValueResolvers.collectionResolver(),
+                ValueResolvers.mapEntryResolver(), ValueResolvers.collectionResolver(), ValueResolvers.listResolver(),
                 ValueResolvers.thisResolver(), ValueResolvers.orResolver(), ValueResolvers.trueResolver(),
                 ValueResolvers.logicalAndResolver(), ValueResolvers.logicalOrResolver());
     }

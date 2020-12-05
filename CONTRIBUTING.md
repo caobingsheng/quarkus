@@ -151,6 +151,10 @@ Select _Use the Eclipse Code Formatter_, then change the _Eclipse Java Formatter
 `eclipse-format.xml` file in the `independent-projects/ide-config` directory. Make sure the _Optimize Imports_ box is ticked, and
 select the `eclipse.importorder` file as the import order config file.
 
+Next, disable wildcard imports:
+navigate to _Editor_ -> _Code Style_ -> _Java_ -> _Imports_
+and set _Class count to use import with '\*'_ to `999`.
+Do the same with _Names count to use static import with '\*'_.
 
 ## Build
 
@@ -361,4 +365,4 @@ DevMojoIT require a few minutes to run but anything more than that is not expect
 * The native integration test for my extension didn't run in the CI
 
 In the interest of speeding up CI, the native build job `native-tests` have been split into multiple categories which are run in parallel. 
-This means that each new extension needs to be configured explicitly in [`ci-actions.yml`](.github/workflows/ci-actions.yml) to have its integration tests run in native mode.
+This means that each new extension needs to be configured explicitly in [`native-tests.json`](.github/native-tests.json) to have its integration tests run in native mode.

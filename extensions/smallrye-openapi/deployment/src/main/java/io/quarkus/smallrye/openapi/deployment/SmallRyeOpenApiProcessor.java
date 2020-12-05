@@ -64,8 +64,8 @@ import io.quarkus.smallrye.openapi.common.deployment.SmallRyeOpenApiConfig;
 import io.quarkus.smallrye.openapi.deployment.spi.AddToOpenAPIDefinitionBuildItem;
 import io.quarkus.smallrye.openapi.runtime.OpenApiConstants;
 import io.quarkus.smallrye.openapi.runtime.OpenApiDocumentService;
-import io.quarkus.smallrye.openapi.runtime.OpenApiHandler;
 import io.quarkus.smallrye.openapi.runtime.OpenApiRecorder;
+import io.quarkus.smallrye.openapi.runtime.OpenApiRuntimeConfig;
 import io.quarkus.vertx.http.deployment.HttpRootPathBuildItem;
 import io.quarkus.vertx.http.deployment.RouteBuildItem;
 import io.quarkus.vertx.http.deployment.devmode.NotFoundPageDisplayableEndpointBuildItem;
@@ -81,6 +81,8 @@ import io.smallrye.openapi.runtime.scanner.AnnotationScannerExtension;
 import io.smallrye.openapi.runtime.scanner.FilteredIndexView;
 import io.smallrye.openapi.runtime.scanner.OpenApiAnnotationScanner;
 import io.smallrye.openapi.vertx.VertxConstants;
+import io.vertx.core.Handler;
+import io.vertx.ext.web.RoutingContext;
 
 /**
  * The main OpenAPI Processor. This will scan for JAX-RS, Spring and Vert.x Annotations, and, if any, add supplied schemas.
@@ -112,8 +114,6 @@ public class SmallRyeOpenApiProcessor {
     private static final String SPRING = "Spring";
     private static final String VERT_X = "Vert.x";
 
-    SmallRyeOpenApiConfig openApiConfig;
-
     @BuildStep
     CapabilityBuildItem capability() {
         return new CapabilityBuildItem(Capability.SMALLRYE_OPENAPI);
@@ -140,10 +140,13 @@ public class SmallRyeOpenApiProcessor {
     }
 
     @BuildStep
-    @Record(ExecutionTime.STATIC_INIT)
+    @Record(ExecutionTime.RUNTIME_INIT)
     RouteBuildItem handler(LaunchModeBuildItem launch,
-            BuildProducer<NotFoundPageDisplayableEndpointBuildItem> displayableEndpoints, OpenApiRecorder recorder,
-            ShutdownContextBuildItem shutdownContext) {
+            BuildProducer<NotFoundPageDisplayableEndpointBuildItem> displayableEndpoints,
+            OpenApiRecorder recorder,
+            OpenApiRuntimeConfig openApiRuntimeConfig,
+            ShutdownContextBuildItem shutdownContext,
+            SmallRyeOpenApiConfig openApiConfig) {
         /*
          * <em>Ugly Hack</em>
          * In dev mode, we pass a classloader to load the up to date OpenAPI document.
@@ -159,7 +162,9 @@ public class SmallRyeOpenApiProcessor {
             recorder.setupClDevMode(shutdownContext);
             displayableEndpoints.produce(new NotFoundPageDisplayableEndpointBuildItem(openApiConfig.path));
         }
-        return new RouteBuildItem(openApiConfig.path, new OpenApiHandler(), HandlerType.BLOCKING);
+
+        Handler<RoutingContext> handler = recorder.handler(openApiRuntimeConfig);
+        return new RouteBuildItem(openApiConfig.path, handler, HandlerType.BLOCKING);
     }
 
     @BuildStep
@@ -274,6 +279,7 @@ public class SmallRyeOpenApiProcessor {
             List<AddToOpenAPIDefinitionBuildItem> openAPIBuildItems,
             HttpRootPathBuildItem httpRootPathBuildItem,
             OutputTargetBuildItem out,
+            SmallRyeOpenApiConfig openApiConfig,
             Optional<ResteasyJaxrsConfigBuildItem> resteasyJaxrsConfig) throws Exception {
         FilteredIndexView index = openApiFilteredIndexViewBuildItem.getIndex();
 
@@ -296,7 +302,7 @@ public class SmallRyeOpenApiProcessor {
             nativeImageResources.produce(new NativeImageResourceBuildItem(name));
 
             if (shouldStore) {
-                storeGeneratedSchema(out, schemaDocument, format);
+                storeGeneratedSchema(openApiConfig, out, schemaDocument, format);
             }
         }
     }
@@ -327,7 +333,8 @@ public class SmallRyeOpenApiProcessor {
                 .build());
     }
 
-    private void storeGeneratedSchema(OutputTargetBuildItem out, byte[] schemaDocument, Format format) throws IOException {
+    private void storeGeneratedSchema(SmallRyeOpenApiConfig openApiConfig, OutputTargetBuildItem out, byte[] schemaDocument,
+            Format format) throws IOException {
         Path directory = openApiConfig.storeSchemaDirectory.get();
 
         Path outputDirectory = out.getOutputDirectory();
@@ -357,11 +364,12 @@ public class SmallRyeOpenApiProcessor {
             return false;
         }
 
-        // Only scan if either JaxRS, Spring Web or Vert.x Web (with @Route) is used
-        boolean isJaxrs = capabilities.isPresent(Capability.RESTEASY);
+        // Only scan if either RESTEasy, Quarkus REST, Spring Web or Vert.x Web (with @Route) is used
+        boolean isRestEasy = capabilities.isPresent(Capability.RESTEASY);
+        boolean isQuarkusRest = capabilities.isPresent(Capability.QUARKUS_REST);
         boolean isSpring = capabilities.isPresent(Capability.SPRING_WEB);
         boolean isVertx = isUsingVertxRoute(index);
-        return isJaxrs || isSpring || isVertx;
+        return isRestEasy || isQuarkusRest || isSpring || isVertx;
     }
 
     private boolean isUsingVertxRoute(IndexView index) {
@@ -394,6 +402,7 @@ public class SmallRyeOpenApiProcessor {
         if (capabilities.isPresent(Capability.RESTEASY)) {
             extensions.add(new RESTEasyExtension(indexView));
         }
+        // TODO: add a Quarkus-REST specific extension that knows the Quarkus REST specific annotations as well as the fact that *param annotations aren't necessary
 
         String defaultPath;
         if (resteasyJaxrsConfig.isPresent()) {
@@ -411,7 +420,7 @@ public class SmallRyeOpenApiProcessor {
 
     private String[] getScanners(Capabilities capabilities, IndexView index) {
         List<String> scanners = new ArrayList<>();
-        if (capabilities.isPresent(Capability.RESTEASY)) {
+        if (capabilities.isPresent(Capability.RESTEASY) || capabilities.isPresent(Capability.QUARKUS_REST)) {
             scanners.add(JAX_RS);
         }
         if (capabilities.isPresent(Capability.SPRING_WEB)) {

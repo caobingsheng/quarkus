@@ -187,15 +187,14 @@ public class OidcTenantConfig {
          * Certificate validation and hostname verification, which can be one of the following values from enum
          * {@link Verification}. Default is required.
          */
-        @ConfigItem(defaultValue = "REQUIRED")
-        public Verification verification;
+        public Optional<Verification> verification = Optional.empty();
 
-        public Verification getVerification() {
+        public Optional<Verification> getVerification() {
             return verification;
         }
 
         public void setVerification(Verification verification) {
-            this.verification = verification;
+            this.verification = Optional.ofNullable(verification);
         }
 
     }
@@ -257,7 +256,7 @@ public class OidcTenantConfig {
          * Default TokenStateManager strategy.
          */
         @ConfigItem(defaultValue = "keep_all_tokens")
-        public Strategy strategy;
+        public Strategy strategy = Strategy.KEEP_ALL_TOKENS;
 
         /**
          * Default TokenStateManager keeps all tokens (ID, access and refresh)
@@ -748,29 +747,6 @@ public class OidcTenantConfig {
 
         /**
          * If this property is set to 'true' then a normal 302 redirect response will be returned
-         * if the request was initiated via XMLHttpRequest and the current user needs to be
-         * (re)authenticated which may not be desirable for Single Page Applications since
-         * XMLHttpRequest automatically following the redirect may not work given that OIDC
-         * authorization endpoints typically do not support CORS.
-         * If this property is set to `false` then a status code of '499' will be returned to allow
-         * the client to handle the redirect manually
-         *
-         * This property is deprecated. Please use a 'javaScriptAutoRedirect' property instead.
-         */
-        @Deprecated
-        @ConfigItem(defaultValue = "true")
-        public boolean xhrAutoRedirect = true;
-
-        public boolean isXhrAutoRedirect() {
-            return xhrAutoRedirect;
-        }
-
-        public void setXhrAutoredirect(boolean autoRedirect) {
-            this.xhrAutoRedirect = autoRedirect;
-        }
-
-        /**
-         * If this property is set to 'true' then a normal 302 redirect response will be returned
          * if the request was initiated via JavaScript API such as XMLHttpRequest or Fetch and the current user needs to be
          * (re)authenticated which may not be desirable for Single Page Applications since
          * it automatically following the redirect may not work given that OIDC authorization endpoints typically do not support
@@ -1085,5 +1061,13 @@ public class OidcTenantConfig {
          * and Authorization Code Flow - if not.
          */
         HYBRID
+    }
+
+    public ApplicationType getApplicationType() {
+        return applicationType;
+    }
+
+    public void setApplicationType(ApplicationType type) {
+        this.applicationType = type;
     }
 }

@@ -8,7 +8,6 @@
         <artifactId>quarkus-integration-tests-parent</artifactId>
         <groupId>io.quarkus</groupId>
         <version>999-SNAPSHOT</version>
-        <relativePath>../</relativePath>
     </parent>
 
     <artifactId>quarkus-integration-test-reactive-db2-client</artifactId>
@@ -17,7 +16,7 @@
 
     <properties>
         <reactive-db2.url>vertx-reactive:db2://localhost:50000/hreact</reactive-db2.url>
-        <db2.image>ibmcom/db2:11.5.0.0a</db2.image>
+        <db2.image>ibmcom/db2:11.5.4.0</db2.image>
     </properties>
 
     <dependencies>
@@ -126,7 +125,7 @@
             <id>test-db2</id>
             <activation>
                 <property>
-                    <name>test-db2</name>
+                    <name>test-containers</name>
                 </property>
             </activation>
             <build>
@@ -207,7 +206,7 @@
             <id>docker-db2</id>
             <activation>
                 <property>
-                    <name>docker</name>
+                    <name>start-containers</name>
                 </property>
             </activation>
             <properties>

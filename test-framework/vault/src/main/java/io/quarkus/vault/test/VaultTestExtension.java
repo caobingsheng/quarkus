@@ -40,13 +40,13 @@ import java.util.regex.Pattern;
 import javax.sql.DataSource;
 
 import org.jboss.logging.Logger;
-import org.jetbrains.annotations.NotNull;
 import org.testcontainers.containers.Container;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.containers.output.OutputFrame;
 
+import io.quarkus.runtime.TlsConfig;
 import io.quarkus.vault.VaultException;
 import io.quarkus.vault.VaultKVSecretEngine;
 import io.quarkus.vault.runtime.VaultManager;
@@ -70,7 +70,7 @@ public class VaultTestExtension {
     static final String DB_USERNAME = "postgres";
     public static final String DB_PASSWORD = "bar";
     public static final String SECRET_VALUE = "s\u20accr\u20act";
-    static final String DEFAULT_VAULT_VERSION = "1.2.2";
+    static final String DEFAULT_VAULT_VERSION = "1.6.0";
     static final int VAULT_PORT = 8200;
     static final int MAPPED_POSTGRESQL_PORT = 6543;
     public static final String VAULT_AUTH_USERPASS_USER = "bob";
@@ -169,7 +169,7 @@ public class VaultTestExtension {
         VaultRuntimeConfig serverConfig = new VaultRuntimeConfig();
         serverConfig.tls = new VaultTlsConfig();
         serverConfig.url = getVaultUrl();
-        serverConfig.tls.skipVerify = true;
+        serverConfig.tls.skipVerify = Optional.of(true);
         serverConfig.tls.caCert = Optional.empty();
         serverConfig.connectTimeout = Duration.ofSeconds(5);
         serverConfig.readTimeout = Duration.ofSeconds(1);
@@ -178,8 +178,9 @@ public class VaultTestExtension {
 
         VaultBuildTimeConfig buildTimeConfig = new VaultBuildTimeConfig();
         buildTimeConfig.health = new HealthConfig();
+        TlsConfig tlsConfig = new TlsConfig();
 
-        return new VaultManager(buildTimeConfig, serverConfig, new TestVaultClient(serverConfig));
+        return new VaultManager(buildTimeConfig, serverConfig, new TestVaultClient(serverConfig, tlsConfig), tlsConfig);
     }
 
     private static Optional<URL> getVaultUrl() {
@@ -309,26 +310,26 @@ public class VaultTestExtension {
         // wrapped
 
         appRoleSecretIdWrappingToken = fetchWrappingToken(
-                execVault(format("vault write -wrap-ttl=60s -f auth/approle/role/%s/secret-id", VAULT_AUTH_APPROLE)));
+                execVault(format("vault write -wrap-ttl=120s -f auth/approle/role/%s/secret-id", VAULT_AUTH_APPROLE)));
         log.info("appRoleSecretIdWrappingToken=" + appRoleSecretIdWrappingToken);
 
         clientTokenWrappingToken = fetchWrappingToken(
-                execVault(format("vault token create -wrap-ttl=60s -ttl=10m -policy=%s", VAULT_POLICY)));
+                execVault(format("vault token create -wrap-ttl=120s -ttl=10m -policy=%s", VAULT_POLICY)));
         log.info("clientTokenWrappingToken=" + clientTokenWrappingToken);
 
         execVault(format("vault kv put %s/%s %s=%s", SECRET_PATH_V1, WRAPPING_TEST_PATH, USERPASS_WRAPPING_TOKEN_PASSWORD_KEY,
                 VAULT_AUTH_USERPASS_PASSWORD));
         passwordKvv1WrappingToken = fetchWrappingToken(
-                execVault(format("vault kv get -wrap-ttl=60s %s/%s", SECRET_PATH_V1, WRAPPING_TEST_PATH)));
+                execVault(format("vault kv get -wrap-ttl=120s %s/%s", SECRET_PATH_V1, WRAPPING_TEST_PATH)));
         log.info("passwordKvv1WrappingToken=" + passwordKvv1WrappingToken);
 
         execVault(format("vault kv put %s/%s %s=%s", SECRET_PATH_V2, WRAPPING_TEST_PATH, USERPASS_WRAPPING_TOKEN_PASSWORD_KEY,
                 VAULT_AUTH_USERPASS_PASSWORD));
         passwordKvv2WrappingToken = fetchWrappingToken(
-                execVault(format("vault kv get -wrap-ttl=60s %s/%s", SECRET_PATH_V2, WRAPPING_TEST_PATH)));
+                execVault(format("vault kv get -wrap-ttl=120s %s/%s", SECRET_PATH_V2, WRAPPING_TEST_PATH)));
         log.info("passwordKvv2WrappingToken=" + passwordKvv2WrappingToken);
         anotherPasswordKvv2WrappingToken = fetchWrappingToken(
-                execVault(format("vault kv get -wrap-ttl=60s %s/%s", SECRET_PATH_V2, WRAPPING_TEST_PATH)));
+                execVault(format("vault kv get -wrap-ttl=120s %s/%s", SECRET_PATH_V2, WRAPPING_TEST_PATH)));
         log.info("anotherPasswordKvv2WrappingToken=" + anotherPasswordKvv2WrappingToken);
 
         // dynamic secrets
@@ -444,7 +445,6 @@ public class VaultTestExtension {
         return execResult;
     }
 
-    @NotNull
     private String[] createVaultCommand(String command) {
         String cmd = (rootToken != null ? "export VAULT_TOKEN=" + rootToken + " && " : "") + command;
         return new String[] { "/bin/sh", "-c", cmd };

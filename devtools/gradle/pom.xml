@@ -80,12 +80,13 @@
                                 <argument>clean</argument>
                                 <argument>${gradle.task}</argument>
                                 <argument>-Pdescription=${project.description}</argument>
+                                <argument>-Dmaven.repo.local=${settings.localRepository}</argument>
                                 <argument>-S</argument>
                                 <argument>--stacktrace</argument>
                                 <argument>--no-daemon</argument>
                             </arguments>
                             <environmentVariables>
-                                <MAVEN_LOCAL_REPO>${settings.localRepository}</MAVEN_LOCAL_REPO>
+                                <MAVEN_REPO_LOCAL>${settings.localRepository}</MAVEN_REPO_LOCAL>
                                 <GRADLE_OPTS>${env.MAVEN_OPTS}</GRADLE_OPTS>
                             </environmentVariables>
                             <skip>${skip.gradle.build}</skip>

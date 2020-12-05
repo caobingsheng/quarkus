@@ -128,7 +128,7 @@ public class NativeConfig {
     /**
      * The docker image to use to do the image build
      */
-    @ConfigItem(defaultValue = "quay.io/quarkus/ubi-quarkus-native-image:20.2.0-java11")
+    @ConfigItem(defaultValue = "${platform.quarkus.native.builder-image}")
     public String builderImage;
 
     /**
@@ -136,7 +136,7 @@ public class NativeConfig {
      * a container build is always done.
      */
     @ConfigItem
-    public Optional<String> containerRuntime;
+    public Optional<ContainerRuntime> containerRuntime;
 
     /**
      * Options to pass to the container runtime
@@ -279,5 +279,17 @@ public class NativeConfig {
          */
         @ConfigItem
         public boolean enabled;
+    }
+
+    /**
+     * Supported Container runtimes
+     */
+    public static enum ContainerRuntime {
+        DOCKER,
+        PODMAN;
+
+        public String getExecutableName() {
+            return this.name().toLowerCase();
+        }
     }
 }

@@ -52,6 +52,10 @@ public class BuildMojo extends QuarkusBootstrapMojo {
     @Parameter(defaultValue = "false", property = "quarkus.build.skip")
     private boolean skip = false;
 
+    @Deprecated
+    @Parameter(property = "skipOriginalJarRename")
+    boolean skipOriginalJarRename;
+
     @Override
     protected boolean beforeExecute() throws MojoExecutionException {
         if (skip) {
@@ -73,7 +77,6 @@ public class BuildMojo extends QuarkusBootstrapMojo {
     @Override
     protected void doExecute() throws MojoExecutionException {
 
-        boolean clear = false;
         try {
             try (CuratedApplication curatedApplication = bootstrapApplication()) {
 
@@ -83,12 +86,15 @@ public class BuildMojo extends QuarkusBootstrapMojo {
                 Artifact original = mavenProject().getArtifact();
                 if (result.getJar() != null) {
 
-                    if (result.getJar().isUberJar() && result.getJar().getOriginalArtifact() != null) {
-                        final Path standardJar = curatedApplication.getAppModel().getAppArtifact().getPaths().getSinglePath();
+                    if (!skipOriginalJarRename && result.getJar().isUberJar()
+                            && result.getJar().getOriginalArtifact() != null) {
+                        final Path standardJar = result.getJar().getOriginalArtifact();
                         if (Files.exists(standardJar)) {
+                            final Path renamedOriginal = standardJar.getParent().toAbsolutePath()
+                                    .resolve(standardJar.getFileName() + ".original");
                             try {
-                                IoUtils.recursiveDelete(result.getJar().getOriginalArtifact());
-                                Files.move(standardJar, result.getJar().getOriginalArtifact());
+                                IoUtils.recursiveDelete(renamedOriginal);
+                                Files.move(standardJar, renamedOriginal);
                             } catch (IOException e) {
                                 throw new UncheckedIOException(e);
                             }
@@ -103,10 +109,6 @@ public class BuildMojo extends QuarkusBootstrapMojo {
             }
         } catch (Exception e) {
             throw new MojoExecutionException("Failed to build quarkus application", e);
-        } finally {
-            if (clear) {
-                System.clearProperty(QUARKUS_PACKAGE_UBER_JAR);
-            }
         }
     }
 

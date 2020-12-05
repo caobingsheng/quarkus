@@ -3,6 +3,8 @@ package io.quarkus.resteasy.runtime.standalone;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.Executor;
 
 import javax.enterprise.inject.Instance;
@@ -71,15 +73,10 @@ public class VertxRequestHandler implements Handler<RoutingContext> {
         // have to create input stream here.  Cannot execute in another thread
         // otherwise request handlers may not get set up before request ends
         InputStream is;
-        try {
-            if (request.getBody() != null) {
-                is = new ByteArrayInputStream(request.getBody().getBytes());
-            } else {
-                is = new VertxInputStream(request, readTimeout);
-            }
-        } catch (IOException e) {
-            request.fail(e);
-            return;
+        if (request.getBody() != null) {
+            is = new ByteArrayInputStream(request.getBody().getBytes());
+        } else {
+            is = new VertxInputStream(request, readTimeout);
         }
         if (BlockingOperationControl.isBlockingAllowed()) {
             try {
@@ -126,9 +123,10 @@ public class VertxRequestHandler implements Handler<RoutingContext> {
                     hostSupplier,
                     dispatcher.getDispatcher(), vertxResponse, requestContext, executor);
             vertxRequest.setInputStream(is);
-            try {
-                ResteasyContext.pushContext(SecurityContext.class, new QuarkusResteasySecurityContext(request, routingContext));
-                ResteasyContext.pushContext(RoutingContext.class, routingContext);
+            Map<Class<?>, Object> map = new HashMap<>();
+            map.put(SecurityContext.class, new QuarkusResteasySecurityContext(request, routingContext));
+            map.put(RoutingContext.class, routingContext);
+            try (ResteasyContext.CloseableContext restCtx = ResteasyContext.addCloseableContextDataLevel(map)) {
                 ContextUtil.pushContext(routingContext);
                 dispatcher.service(ctx, request, response, vertxRequest, vertxResponse, true);
             } catch (Failure e1) {

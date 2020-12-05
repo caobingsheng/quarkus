@@ -123,15 +123,23 @@ public class VertxHttpRecorder {
     private static volatile int actualHttpPort = -1;
     private static volatile int actualHttpsPort = -1;
 
+    public static final String GET = "GET";
     private static final Handler<HttpServerRequest> ACTUAL_ROOT = new Handler<HttpServerRequest>() {
         @Override
         public void handle(HttpServerRequest httpServerRequest) {
+            if (httpServerRequest.absoluteURI() == null) {
+                httpServerRequest.response().setStatusCode(400).end();
+                return;
+            }
             //we need to pause the request to make sure that data does
             //not arrive before handlers have a chance to install a read handler
             //as it is possible filters such as the auth filter can do blocking tasks
             //as the underlying handler has not had a chance to install a read handler yet
             //and data that arrives while the blocking task is being processed will be lost
-            httpServerRequest.pause();
+            if (!httpServerRequest.rawMethod().equals(GET)) {
+                //we don't pause for GET requests, as there is no data
+                httpServerRequest.pause();
+            }
             Handler<HttpServerRequest> rh = VertxHttpRecorder.rootHandler;
             if (rh != null) {
                 rh.handle(httpServerRequest);
@@ -173,7 +181,7 @@ public class VertxHttpRecorder {
         if (supplier == null) {
             VertxConfiguration vertxConfiguration = new VertxConfiguration();
             ConfigInstantiator.handleObject(vertxConfiguration);
-            vertx = VertxCoreRecorder.initialize(vertxConfiguration, null);
+            vertx = VertxCoreRecorder.recoverFailedStart(vertxConfiguration).get();
         } else {
             vertx = supplier.get();
         }
@@ -183,11 +191,23 @@ public class VertxHttpRecorder {
             ConfigInstantiator.handleObject(buildConfig);
             HttpConfiguration config = new HttpConfiguration();
             ConfigInstantiator.handleObject(config);
+            if (config.host == null) {
+                //HttpHostConfigSource does not come into play here
+                config.host = "localhost";
+            }
             Router router = Router.router(vertx);
             if (hotReplacementHandler != null) {
                 router.route().order(Integer.MIN_VALUE).blockingHandler(hotReplacementHandler);
             }
-            rootHandler = router;
+
+            Handler<HttpServerRequest> root = router;
+            LiveReloadConfig liveReloadConfig = new LiveReloadConfig();
+            ConfigInstantiator.handleObject(liveReloadConfig);
+            if (liveReloadConfig.password.isPresent()
+                    && hotReplacementContext.getDevModeType() == DevModeType.REMOTE_SERVER_SIDE) {
+                root = remoteSyncHandler = new RemoteSyncHandler(liveReloadConfig.password.get(), root, hotReplacementContext);
+            }
+            rootHandler = root;
 
             //we can't really do
             doServerStart(vertx, buildConfig, config, LaunchMode.DEVELOPMENT, new Supplier<Integer>() {

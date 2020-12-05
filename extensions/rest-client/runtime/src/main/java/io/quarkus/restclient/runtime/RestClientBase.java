@@ -1,6 +1,11 @@
 package io.quarkus.restclient.runtime;
 
-import java.io.*;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.lang.reflect.InvocationTargetException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.security.KeyStore;
@@ -39,6 +44,8 @@ public class RestClientBase {
     public static final String REST_KEY_STORE_PASSWORD = "%s/" + MP_REST + "/keyStorePassword";
     public static final String REST_KEY_STORE_TYPE = "%s/" + MP_REST + "/keyStoreType";
     public static final String REST_HOSTNAME_VERIFIER = "%s/" + MP_REST + "/hostnameVerifier";
+    public static final String REST_NOOP_HOSTNAME_VERIFIER = "io.quarkus.restclient.NoopHostnameVerifier";
+    public static final String TLS_TRUST_ALL = "quarkus.tls.trust-all";
 
     private final Class<?> proxyType;
     private final String baseUriFromAnnotation;
@@ -67,17 +74,23 @@ public class RestClientBase {
     }
 
     private void configureSsl(RestClientBuilder builder) {
-        Optional<String> maybeTrustStore = getOptionalProperty(REST_TRUST_STORE, String.class);
+
+        Optional<Boolean> trustAll = getOptionalProperty(TLS_TRUST_ALL, Boolean.class);
+        if (trustAll.isPresent() && trustAll.get()) {
+            registerHostnameVerifier(REST_NOOP_HOSTNAME_VERIFIER, builder);
+        }
+
+        Optional<String> maybeTrustStore = getOptionalDynamicProperty(REST_TRUST_STORE, String.class);
         if (maybeTrustStore.isPresent()) {
             registerTrustStore(maybeTrustStore.get(), builder);
         }
 
-        Optional<String> maybeKeyStore = getOptionalProperty(REST_KEY_STORE, String.class);
+        Optional<String> maybeKeyStore = getOptionalDynamicProperty(REST_KEY_STORE, String.class);
         if (maybeKeyStore.isPresent()) {
             registerKeyStore(maybeKeyStore.get(), builder);
         }
 
-        Optional<String> maybeHostnameVerifier = getOptionalProperty(REST_HOSTNAME_VERIFIER, String.class);
+        Optional<String> maybeHostnameVerifier = getOptionalDynamicProperty(REST_HOSTNAME_VERIFIER, String.class);
         if (maybeHostnameVerifier.isPresent()) {
             registerHostnameVerifier(maybeHostnameVerifier.get(), builder);
         }
@@ -91,13 +104,18 @@ public class RestClientBase {
 
     private void registerHostnameVerifier(String verifier, RestClientBuilder builder) {
         try {
-            Class<?> verifierClass = Class.forName(verifier, true, Thread.currentThread().getContextClassLoader());
-            builder.hostnameVerifier((HostnameVerifier) verifierClass.newInstance());
-        } catch (ClassNotFoundException e) {
-            throw new RuntimeException("Could not find hostname verifier class" + verifier, e);
-        } catch (InstantiationException | IllegalAccessException e) {
+            Class<?> verifierClass = Thread.currentThread().getContextClassLoader().loadClass(verifier);
+            builder.hostnameVerifier((HostnameVerifier) verifierClass.getDeclaredConstructor().newInstance());
+        } catch (NoSuchMethodException e) {
             throw new RuntimeException(
-                    "Failed to instantiate hostname verifier class. Make sure it has a public, no-argument constructor", e);
+                    "Could not find a public, no-argument constructor for the hostname verifier class " + verifier, e);
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException("Could not find hostname verifier class " + verifier, e);
+        } catch (InstantiationException | IllegalAccessException | InvocationTargetException e) {
+            throw new RuntimeException(
+                    "Failed to instantiate hostname verifier class " + verifier
+                            + ". Make sure it has a public, no-argument constructor",
+                    e);
         } catch (ClassCastException e) {
             throw new RuntimeException("The provided hostname verifier " + verifier + " is not an instance of HostnameVerifier",
                     e);
@@ -105,8 +123,8 @@ public class RestClientBase {
     }
 
     private void registerKeyStore(String keyStorePath, RestClientBuilder builder) {
-        Optional<String> keyStorePassword = getOptionalProperty(REST_KEY_STORE_PASSWORD, String.class);
-        Optional<String> keyStoreType = getOptionalProperty(REST_KEY_STORE_TYPE, String.class);
+        Optional<String> keyStorePassword = getOptionalDynamicProperty(REST_KEY_STORE_PASSWORD, String.class);
+        Optional<String> keyStoreType = getOptionalDynamicProperty(REST_KEY_STORE_TYPE, String.class);
 
         try {
             KeyStore keyStore = KeyStore.getInstance(keyStoreType.orElse("JKS"));
@@ -129,8 +147,8 @@ public class RestClientBase {
     }
 
     private void registerTrustStore(String trustStorePath, RestClientBuilder builder) {
-        Optional<String> maybeTrustStorePassword = getOptionalProperty(REST_TRUST_STORE_PASSWORD, String.class);
-        Optional<String> maybeTrustStoreType = getOptionalProperty(REST_TRUST_STORE_TYPE, String.class);
+        Optional<String> maybeTrustStorePassword = getOptionalDynamicProperty(REST_TRUST_STORE_PASSWORD, String.class);
+        Optional<String> maybeTrustStoreType = getOptionalDynamicProperty(REST_TRUST_STORE_TYPE, String.class);
 
         try {
             KeyStore trustStore = KeyStore.getInstance(maybeTrustStoreType.orElse("JKS"));
@@ -178,7 +196,7 @@ public class RestClientBase {
     }
 
     private void configureProviders(RestClientBuilder builder) {
-        Optional<String> maybeProviders = getOptionalProperty(REST_PROVIDERS, String.class);
+        Optional<String> maybeProviders = getOptionalDynamicProperty(REST_PROVIDERS, String.class);
         if (maybeProviders.isPresent()) {
             registerProviders(builder, maybeProviders.get());
         }
@@ -199,21 +217,21 @@ public class RestClientBase {
     }
 
     private void configureTimeouts(RestClientBuilder builder) {
-        Optional<Long> connectTimeout = getOptionalProperty(REST_CONNECT_TIMEOUT_FORMAT, Long.class);
+        Optional<Long> connectTimeout = getOptionalDynamicProperty(REST_CONNECT_TIMEOUT_FORMAT, Long.class);
         if (connectTimeout.isPresent()) {
             builder.connectTimeout(connectTimeout.get(), TimeUnit.MILLISECONDS);
         }
 
-        Optional<Long> readTimeout = getOptionalProperty(REST_READ_TIMEOUT_FORMAT, Long.class);
+        Optional<Long> readTimeout = getOptionalDynamicProperty(REST_READ_TIMEOUT_FORMAT, Long.class);
         if (readTimeout.isPresent()) {
             builder.readTimeout(readTimeout.get(), TimeUnit.MILLISECONDS);
         }
     }
 
     private void configureBaseUrl(RestClientBuilder builder) {
-        Optional<String> propertyOptional = getOptionalProperty(REST_URI_FORMAT, String.class);
+        Optional<String> propertyOptional = getOptionalDynamicProperty(REST_URI_FORMAT, String.class);
         if (!propertyOptional.isPresent()) {
-            propertyOptional = getOptionalProperty(REST_URL_FORMAT, String.class);
+            propertyOptional = getOptionalDynamicProperty(REST_URL_FORMAT, String.class);
         }
         if (((baseUriFromAnnotation == null) || baseUriFromAnnotation.isEmpty())
                 && !propertyOptional.isPresent()) {
@@ -240,10 +258,16 @@ public class RestClientBase {
         }
     }
 
-    private <T> Optional<T> getOptionalProperty(String propertyFormat, Class<T> type) {
+    private <T> Optional<T> getOptionalDynamicProperty(String propertyFormat, Class<T> type) {
         final Config config = ConfigProvider.getConfig();
         Optional<T> interfaceNameValue = config.getOptionalValue(String.format(propertyFormat, proxyType.getName()), type);
         return interfaceNameValue.isPresent() ? interfaceNameValue
                 : config.getOptionalValue(String.format(propertyFormat, propertyPrefix), type);
     }
+
+    private <T> Optional<T> getOptionalProperty(String propertyName, Class<T> type) {
+        final Config config = ConfigProvider.getConfig();
+        return config.getOptionalValue(propertyName, type);
+    }
+
 }

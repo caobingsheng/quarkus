@@ -19,12 +19,13 @@ public interface CodestartFileStrategyHandler {
     Map<String, CodestartFileStrategyHandler> BY_NAME = Stream
             .of(DEFAULT_STRATEGY,
                     new AppendCodestartFileStrategyHandler(),
+                    new ContentMergeCodestartFileStrategyHandler(),
                     new ExecutableFileStrategyHandler(),
                     new ReplaceCodestartFileStrategyHandler(),
                     new ForbiddenCodestartFileStrategyHandler(),
                     new SmartConfigMergeCodestartFileStrategyHandler(),
                     new SmartPomMergeCodestartFileStrategyHandler(),
-                    new NativeTestDirResolveCodestartFileStrategyHandler())
+                    new SmartPackageFileStrategyHandler())
             .collect(Collectors.toMap(CodestartFileStrategyHandler::name, Function.identity()));
 
     String name();

@@ -42,12 +42,6 @@ final class Beans {
     private Beans() {
     }
 
-    /**
-     *
-     * @param beanClass
-     * @param beanDeployment
-     * @return a new bean info
-     */
     static BeanInfo createClassBean(ClassInfo beanClass, BeanDeployment beanDeployment, InjectionPointModifier transformer) {
         Set<AnnotationInstance> qualifiers = new HashSet<>();
         List<ScopeInfo> scopes = new ArrayList<>();
@@ -136,7 +130,7 @@ final class Beans {
             alternativePriority = initAlternativePriority(beanClass, alternativePriority, stereotypes, beanDeployment);
             if (alternativePriority == null) {
                 // after all attempts, priority is still null, bean will be ignored
-                LOGGER.infof(
+                LOGGER.debugf(
                         "Ignoring bean defined via %s - declared as an @Alternative but not selected by @Priority, @AlternativePriority or quarkus.arc.selected-alternatives",
                         beanClass.name());
                 return null;
@@ -172,14 +166,6 @@ final class Beans {
         return null;
     }
 
-    /**
-     *
-     * @param producerMethod
-     * @param declaringBean
-     * @param beanDeployment
-     * @param disposer
-     * @return a new bean info
-     */
     static BeanInfo createProducerMethod(MethodInfo producerMethod, BeanInfo declaringBean, BeanDeployment beanDeployment,
             DisposerInfo disposer, InjectionPointModifier transformer) {
         Set<AnnotationInstance> qualifiers = new HashSet<>();
@@ -261,11 +247,10 @@ final class Beans {
                 alternativePriority = declaringBean.getAlternativePriority();
             }
             alternativePriority = initAlternativePriority(producerMethod, alternativePriority, stereotypes, beanDeployment);
-            // after all attempts, priority is still null
             if (alternativePriority == null) {
                 // after all attempts, priority is still null, bean will be ignored
-                LOGGER.infof(
-                        "Ignoring producer method %s - declared as an @Alternative but not selected by @Priority, @AlternativePriority or quarkus.arc.selected-alternatives",
+                LOGGER.debugf(
+                        "Ignoring producer method %s - declared as an @Alternative but not selected by @AlternativePriority or quarkus.arc.selected-alternatives",
                         declaringBean.getTarget().get().asClass().name() + "#" + producerMethod.name());
                 return null;
             }
@@ -277,14 +262,6 @@ final class Beans {
         return bean;
     }
 
-    /**
-     *
-     * @param producerField
-     * @param declaringBean
-     * @param beanDeployment
-     * @param disposer
-     * @return a new bean info
-     */
     static BeanInfo createProducerField(FieldInfo producerField, BeanInfo declaringBean, BeanDeployment beanDeployment,
             DisposerInfo disposer) {
         Set<AnnotationInstance> qualifiers = new HashSet<>();
@@ -364,10 +341,9 @@ final class Beans {
             // after all attempts, priority is still null
             if (alternativePriority == null) {
                 LOGGER.debugf(
-                        "Ignoring producer field %s - declared as an @Alternative but not selected by @Priority, @AlternativePriority or quarkus.arc.selected-alternatives",
+                        "Ignoring producer field %s - declared as an @Alternative but not selected by @AlternativePriority or quarkus.arc.selected-alternatives",
                         producerField);
                 return null;
-
             }
         }
 
@@ -665,7 +641,7 @@ final class Beans {
     }
 
     static void validateBean(BeanInfo bean, List<Throwable> errors, List<BeanDeploymentValidator> validators,
-            Consumer<BytecodeTransformer> bytecodeTransformerConsumer) {
+            Consumer<BytecodeTransformer> bytecodeTransformerConsumer, Set<DotName> classesReceivingNoArgsCtor) {
 
         if (bean.isClassBean()) {
             ClassInfo beanClass = bean.getTarget().get().asClass();
@@ -698,9 +674,13 @@ final class Beans {
                         }
                     }
                     if (superName != null) {
-                        String superClassName = superName.toString().replace('.', '/');
-                        bytecodeTransformerConsumer.accept(new BytecodeTransformer(beanClass.name().toString(),
-                                new NoArgConstructorTransformFunction(superClassName)));
+                        if (!classesReceivingNoArgsCtor.contains(beanClass.name())) {
+                            String superClassName = superName.toString().replace('.', '/');
+                            bytecodeTransformerConsumer.accept(new BytecodeTransformer(beanClass.name().toString(),
+                                    new NoArgConstructorTransformFunction(superClassName)));
+                            classesReceivingNoArgsCtor.add(beanClass.name());
+                        }
+
                     } else {
                         errors.add(new DeploymentException(
                                 "It's not possible to add a synthetic constructor with no parameters to the unproxyable bean class: "
@@ -762,9 +742,12 @@ final class Beans {
                             }
                         }
                         if (superName != null) {
-                            String superClassName = superName.toString().replace('.', '/');
-                            bytecodeTransformerConsumer.accept(new BytecodeTransformer(returnTypeClass.name().toString(),
-                                    new NoArgConstructorTransformFunction(superClassName)));
+                            if (!classesReceivingNoArgsCtor.contains(returnTypeClass.name())) {
+                                String superClassName = superName.toString().replace('.', '/');
+                                bytecodeTransformerConsumer.accept(new BytecodeTransformer(returnTypeClass.name().toString(),
+                                        new NoArgConstructorTransformFunction(superClassName)));
+                                classesReceivingNoArgsCtor.add(returnTypeClass.name());
+                            }
                         } else {
                             errors.add(new DeploymentException(String
                                     .format("It's not possible to add a synthetic constructor with no parameters to the unproxyable return type of "
@@ -787,6 +770,40 @@ final class Beans {
                                                 "%s is not proxyable because it has a private no-args constructor: %s.",
                                                 classifier, bean)));
                     }
+                }
+            }
+        } else if (bean.isSynthetic()) {
+            // this is for synthetic beans that need to be proxied but their classes don't have no-args constructor
+            ClassInfo beanClass = getClassByName(bean.getDeployment().getBeanArchiveIndex(), bean.getBeanClass());
+            MethodInfo noArgsConstructor = beanClass.method(Methods.INIT);
+            if (bean.getScope().isNormal() && !Modifier.isInterface(beanClass.flags()) && noArgsConstructor == null) {
+                if (bean.getDeployment().transformUnproxyableClasses) {
+                    DotName superName = beanClass.superName();
+                    if (!DotNames.OBJECT.equals(superName)) {
+                        ClassInfo superClass = bean.getDeployment().getBeanArchiveIndex().getClassByName(beanClass.superName());
+                        if (superClass == null || !superClass.hasNoArgsConstructor()) {
+                            // Bean class extends a class without no-args constructor
+                            // It is not possible to generate a no-args constructor reliably
+                            superName = null;
+                        }
+                    }
+                    if (superName != null) {
+                        if (!classesReceivingNoArgsCtor.contains(beanClass.name())) {
+                            String superClassName = superName.toString().replace('.', '/');
+                            bytecodeTransformerConsumer.accept(new BytecodeTransformer(beanClass.name().toString(),
+                                    new NoArgConstructorTransformFunction(superClassName)));
+                            classesReceivingNoArgsCtor.add(beanClass.name());
+                        }
+                    } else {
+                        errors.add(new DeploymentException(
+                                "It's not possible to add a synthetic constructor with no parameters to the unproxyable bean class: "
+                                        +
+                                        beanClass));
+                    }
+                } else {
+                    errors.add(new DeploymentException(String
+                            .format("Normal scoped beans must declare a non-private constructor with no parameters: %s",
+                                    bean)));
                 }
             }
         }

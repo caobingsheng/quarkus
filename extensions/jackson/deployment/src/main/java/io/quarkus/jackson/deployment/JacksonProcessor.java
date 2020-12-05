@@ -29,9 +29,12 @@ import com.fasterxml.jackson.databind.module.SimpleModule;
 import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
 import io.quarkus.arc.deployment.GeneratedBeanBuildItem;
 import io.quarkus.arc.deployment.GeneratedBeanGizmoAdaptor;
+import io.quarkus.arc.deployment.SyntheticBeanBuildItem;
 import io.quarkus.deployment.Capability;
 import io.quarkus.deployment.annotations.BuildProducer;
 import io.quarkus.deployment.annotations.BuildStep;
+import io.quarkus.deployment.annotations.ExecutionTime;
+import io.quarkus.deployment.annotations.Record;
 import io.quarkus.deployment.builditem.CapabilityBuildItem;
 import io.quarkus.deployment.builditem.CombinedIndexBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.ReflectiveClassBuildItem;
@@ -43,7 +46,10 @@ import io.quarkus.gizmo.MethodCreator;
 import io.quarkus.gizmo.MethodDescriptor;
 import io.quarkus.gizmo.ResultHandle;
 import io.quarkus.jackson.ObjectMapperCustomizer;
-import io.quarkus.jackson.ObjectMapperProducer;
+import io.quarkus.jackson.runtime.JacksonBuildTimeConfig;
+import io.quarkus.jackson.runtime.JacksonConfigSupport;
+import io.quarkus.jackson.runtime.JacksonRecorder;
+import io.quarkus.jackson.runtime.ObjectMapperProducer;
 import io.quarkus.jackson.spi.ClassPathJacksonModuleBuildItem;
 import io.quarkus.jackson.spi.JacksonModuleBuildItem;
 
@@ -64,29 +70,21 @@ public class JacksonProcessor {
             PARAMETER_NAMES_MODULE);
 
     @Inject
-    BuildProducer<ReflectiveClassBuildItem> reflectiveClass;
-
-    @Inject
-    BuildProducer<ReflectiveHierarchyBuildItem> reflectiveHierarchyClass;
-
-    @Inject
-    BuildProducer<ReflectiveMethodBuildItem> reflectiveMethod;
-
-    @Inject
-    BuildProducer<AdditionalBeanBuildItem> additionalBeans;
-
-    @Inject
     CombinedIndexBuildItem combinedIndexBuildItem;
 
     @Inject
     List<IgnoreJsonDeserializeClassBuildItem> ignoreJsonDeserializeClassBuildItems;
 
     @BuildStep
-    CapabilityBuildItem register() {
-        addReflectiveClass(true, false,
-                "com.fasterxml.jackson.module.jaxb.JaxbAnnotationIntrospector",
-                "com.fasterxml.jackson.databind.ser.std.SqlDateSerializer",
-                "com.fasterxml.jackson.databind.ser.std.SqlTimeSerializer");
+    CapabilityBuildItem register(
+            BuildProducer<ReflectiveClassBuildItem> reflectiveClass,
+            BuildProducer<ReflectiveHierarchyBuildItem> reflectiveHierarchyClass,
+            BuildProducer<ReflectiveMethodBuildItem> reflectiveMethod,
+            BuildProducer<AdditionalBeanBuildItem> additionalBeans) {
+        reflectiveClass.produce(
+                new ReflectiveClassBuildItem(true, false, "com.fasterxml.jackson.module.jaxb.JaxbAnnotationIntrospector",
+                        "com.fasterxml.jackson.databind.ser.std.SqlDateSerializer",
+                        "com.fasterxml.jackson.databind.ser.std.SqlTimeSerializer"));
 
         IndexView index = combinedIndexBuildItem.getIndex();
 
@@ -103,14 +101,14 @@ public class JacksonProcessor {
             if (CLASS.equals(annotationTarget.kind())) {
                 DotName dotName = annotationTarget.asClass().name();
                 if (!ignoredDotNames.contains(dotName)) {
-                    addReflectiveHierarchyClass(dotName);
+                    addReflectiveHierarchyClass(dotName, reflectiveHierarchyClass);
                 }
 
                 AnnotationValue annotationValue = deserializeInstance.value("builder");
                 if (null != annotationValue && AnnotationValue.Kind.CLASS.equals(annotationValue.kind())) {
                     DotName builderClassName = annotationValue.asClass().name();
                     if (!BUILDER_VOID.equals(builderClassName)) {
-                        addReflectiveHierarchyClass(builderClassName);
+                        addReflectiveHierarchyClass(builderClassName, reflectiveHierarchyClass);
                     }
                 }
             }
@@ -151,16 +149,13 @@ public class JacksonProcessor {
         return new CapabilityBuildItem(Capability.JACKSON);
     }
 
-    private void addReflectiveHierarchyClass(DotName className) {
+    private void addReflectiveHierarchyClass(DotName className,
+            BuildProducer<ReflectiveHierarchyBuildItem> reflectiveHierarchyClass) {
         Type jandexType = Type.create(className, Type.Kind.CLASS);
         reflectiveHierarchyClass.produce(new ReflectiveHierarchyBuildItem.Builder()
                 .type(jandexType)
                 .source(getClass().getSimpleName() + " > " + jandexType.name().toString())
                 .build());
-    }
-
-    private void addReflectiveClass(boolean methods, boolean fields, String... className) {
-        reflectiveClass.produce(new ReflectiveClassBuildItem(methods, fields, className));
     }
 
     @BuildStep
@@ -177,6 +172,16 @@ public class JacksonProcessor {
             classPathJacksonModules.produce(new ClassPathJacksonModuleBuildItem(moduleClassName));
         } catch (Exception ignored) {
         }
+    }
+
+    @BuildStep
+    @Record(ExecutionTime.STATIC_INIT)
+    SyntheticBeanBuildItem pushConfigurationBean(JacksonRecorder jacksonRecorder,
+            JacksonBuildTimeConfig jacksonBuildTimeConfig) {
+        return SyntheticBeanBuildItem.configure(JacksonConfigSupport.class)
+                .scope(Singleton.class)
+                .supplier(jacksonRecorder.jacksonConfigSupport(jacksonBuildTimeConfig))
+                .done();
     }
 
     // Generate a ObjectMapperCustomizer bean that registers each serializer / deserializer as well as detected modules with the ObjectMapper

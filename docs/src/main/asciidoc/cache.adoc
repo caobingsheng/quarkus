@@ -49,10 +49,10 @@ mvn io.quarkus:quarkus-maven-plugin:{quarkus-version}:create \
     -DprojectArtifactId=cache-quickstart \
     -DclassName="org.acme.cache.WeatherForecastResource" \
     -Dpath="/weather" \
-    -Dextensions="cache,resteasy-jsonb"
+    -Dextensions="cache,resteasy-jackson"
 ----
 
-This command generates the Maven project with a REST endpoint and imports the `cache` and `resteasy-jsonb` extensions.
+This command generates the Maven project with a REST endpoint and imports the `cache` and `resteasy-jackson` extensions.
 
 If you already have your Quarkus project configured, you can add the `cache` extension
 to your project by running the following command in your project base directory:
@@ -274,6 +274,12 @@ The following sections will show you everything there is to know about it.
 
 Quarkus offers a set of annotations that can be used in a CDI managed bean to enable caching abilities.
 
+[WARNING]
+====
+Caching annotations are not allowed on private methods.
+They will work fine with any other access modifier including package-private (no explicit modifier).
+====
+
 === @CacheResult
 
 Loads a method result from the cache without executing the method body whenever possible.
@@ -391,17 +397,6 @@ quarkus.cache.caffeine."bar".maximum-size=1000 <2>
 ----
 <1> The `foo` cache is being configured.
 <2> The `bar` cache is being configured.
-
-== Context propagation
-
-This extension relies on non-blocking calls internally for cache values computations.
-By default, there's no context propagation between the calling thread (from your application) and a thread that performs such a computation.
-
-The context propagation can be enabled for this extension by simply adding the `quarkus-smallrye-context-propagation` extension to your project.
-
-If you see a `javax.enterprise.context.ContextNotActiveException` in your application log during a cache computation, then you probably need to enable the context propagation.
-
-You can find more information about context propagation in Quarkus in the link:context-propagation[dedicated guide].
 
 == Annotated beans examples
 
@@ -545,7 +540,7 @@ act accordingly:
     public void caller(int val) {
 
         Integer result = callRemote(val);  //<1>
-        if (result == null) {
+        if (result != null) {
             System.out.println("Result is " + result);
         else {
            System.out.println("Got an exception");

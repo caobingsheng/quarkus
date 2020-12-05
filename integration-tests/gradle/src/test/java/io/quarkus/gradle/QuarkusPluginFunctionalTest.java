@@ -88,7 +88,8 @@ public class QuarkusPluginFunctionalTest extends QuarkusGradleWrapperTestBase {
         BuildResult firstBuild = runGradleWrapper(projectRoot, "quarkusBuild", "--stacktrace");
         assertThat(firstBuild.getTasks().get(":quarkusBuild")).isEqualTo(BuildResult.SUCCESS_OUTCOME);
 
-        final File greetingResourceFile = projectRoot.toPath().resolve("src/main/java/org/acme/GreetingResource.java").toFile();
+        final File greetingResourceFile = projectRoot.toPath().resolve("src/main/java/org/acme/foo/GreetingResource.java")
+                .toFile();
         DevModeTestUtils.filter(greetingResourceFile, ImmutableMap.of("\"/greeting\"", "\"/test/hello\""));
 
         BuildResult secondBuild = runGradleWrapper(projectRoot, "quarkusBuild", "--stacktrace");
@@ -169,7 +170,7 @@ public class QuarkusPluginFunctionalTest extends QuarkusGradleWrapperTestBase {
                         .artifactId("foo")
                         .version("1.0.0-SNAPSHOT")
                         .buildTool(BuildTool.GRADLE)
-                        .className("org.acme.GreetingResource")
+                        .className("org.acme.foo.GreetingResource")
                         .sourceType(sourceType)
                         .doCreateProject(context))
                                 .withFailMessage("Project was not created")

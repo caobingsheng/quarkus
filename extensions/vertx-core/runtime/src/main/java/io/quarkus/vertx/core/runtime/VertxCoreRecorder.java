@@ -9,6 +9,7 @@ import static io.vertx.core.file.impl.FileResolver.CACHE_DIR_BASE_PROP_NAME;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -24,10 +25,12 @@ import org.wildfly.common.cpu.ProcessorInfo;
 
 import io.netty.channel.EventLoopGroup;
 import io.netty.util.concurrent.EventExecutor;
+import io.netty.util.concurrent.FastThreadLocal;
 import io.quarkus.runtime.IOThreadDetector;
 import io.quarkus.runtime.LaunchMode;
 import io.quarkus.runtime.ShutdownContext;
 import io.quarkus.runtime.annotations.Recorder;
+import io.quarkus.vertx.core.runtime.config.AddressResolverConfiguration;
 import io.quarkus.vertx.core.runtime.config.ClusterConfiguration;
 import io.quarkus.vertx.core.runtime.config.EventBusConfiguration;
 import io.quarkus.vertx.core.runtime.config.VertxConfiguration;
@@ -37,6 +40,7 @@ import io.vertx.core.Handler;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
 import io.vertx.core.VertxOptions;
+import io.vertx.core.dns.AddressResolverOptions;
 import io.vertx.core.eventbus.EventBusOptions;
 import io.vertx.core.file.FileSystemOptions;
 import io.vertx.core.http.ClientAuth;
@@ -215,6 +219,8 @@ public class VertxCoreRecorder {
             System.setProperty(ResolverProvider.DISABLE_DNS_RESOLVER_PROP_NAME, "true");
         }
 
+        setAddressResolverOptions(conf, options);
+
         if (allowClustering) {
             // Order matters, as the cluster options modifies the event bus options.
             setEventBusOptions(conf, options);
@@ -267,6 +273,8 @@ public class VertxCoreRecorder {
 
     void destroy() {
         if (vertx != null && vertx.v != null) {
+            // Netty attaches a ThreadLocal to the main thread that can leak the QuarkusClassLoader which can be problematic in dev or test mode
+            FastThreadLocal.destroy();
             CountDownLatch latch = new CountDownLatch(1);
             AtomicReference<Throwable> problem = new AtomicReference<>();
             vertx.v.close(ar -> {
@@ -282,7 +290,7 @@ public class VertxCoreRecorder {
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                throw new IllegalStateException("Interrupted when closing Vert.x instance", e);
+                throw new IllegalStateException("Exception when closing Vert.x instance", e);
             }
             vertx = null;
         }
@@ -340,6 +348,16 @@ public class VertxCoreRecorder {
         options.setEventBusOptions(opts);
     }
 
+    private static void setAddressResolverOptions(VertxConfiguration conf, VertxOptions options) {
+        AddressResolverConfiguration ar = conf.resolver;
+        AddressResolverOptions opts = new AddressResolverOptions();
+        opts.setCacheMaxTimeToLive(ar.cacheMaxTimeToLive);
+        opts.setCacheMinTimeToLive(ar.cacheMinTimeToLive);
+        opts.setCacheNegativeTimeToLive(ar.cacheNegativeTimeToLive);
+
+        options.setAddressResolverOptions(opts);
+    }
+
     public Supplier<EventLoopGroup> bossSupplier() {
         return new Supplier<EventLoopGroup>() {
             @Override
@@ -372,6 +390,11 @@ public class VertxCoreRecorder {
                 return threads;
             }
         };
+    }
+
+    public static Supplier<Vertx> recoverFailedStart(VertxConfiguration config) {
+        return vertx = new VertxSupplier(config, Collections.emptyList());
+
     }
 
     static class VertxSupplier implements Supplier<Vertx> {

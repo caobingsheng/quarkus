@@ -62,7 +62,7 @@ mvn io.quarkus:quarkus-maven-plugin:{quarkus-version}:create \
     -DprojectArtifactId=hibernate-search-orm-elasticsearch-quickstart \
     -DclassName="org.acme.hibernate.search.elasticsearch.LibraryResource" \
     -Dpath="/library" \
-    -Dextensions="hibernate-orm-panache, hibernate-search-orm-elasticsearch, resteasy-jsonb, jdbc-postgresql"
+    -Dextensions="hibernate-orm-panache, hibernate-search-orm-elasticsearch, resteasy-jackson, jdbc-postgresql"
 cd hibernate-search-orm-elasticsearch-quickstart
 ----
 
@@ -71,7 +71,7 @@ This command generates a Maven structure importing the following extensions:
  * Hibernate ORM with Panache,
  * the PostgreSQL JDBC driver,
  * Hibernate Search + Elasticsearch,
- * RESTEasy and JSON-B.
+ * RESTEasy and Jackson.
 
 If you already have your Quarkus project configured, you can add the `hibernate-search-orm-elasticsearch` extension
 to your project by running the following command in your project base directory:
@@ -156,9 +156,10 @@ package org.acme.hibernate.search.elasticsearch.model;
 
 import java.util.Objects;
 
-import javax.json.bind.annotation.JsonbTransient;
 import javax.persistence.Entity;
 import javax.persistence.ManyToOne;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import io.quarkus.hibernate.orm.panache.PanacheEntity;
 
@@ -168,7 +169,7 @@ public class Book extends PanacheEntity {
     public String title;
 
     @ManyToOne
-    @JsonbTransient // <1>
+    @JsonIgnore <1>
     public Author author;
 
     @Override
@@ -191,7 +192,7 @@ public class Book extends PanacheEntity {
     }
 }
 ----
-<1> We mark this property with `@JsonbTransient` to avoid infinite loops when serializing with JSON-B.
+<1> We mark this property with `@JsonIgnore` to avoid infinite loops when serializing with Jackson.
 
 == Initializing the REST service
 
@@ -302,7 +303,7 @@ Let's go back to our entities.
 
 Enabling full text search capabilities for them is as simple as adding a few annotations.
 
-Let's edit the `Author` entity again to include this content:
+Let's edit the `Book` entity again to include this content:
 
 [source,java]
 ----
@@ -310,12 +311,13 @@ package org.acme.hibernate.search.elasticsearch.model;
 
 import java.util.Objects;
 
-import javax.json.bind.annotation.JsonbTransient;
 import javax.persistence.Entity;
 import javax.persistence.ManyToOne;
 
 import org.hibernate.search.mapper.pojo.mapping.definition.annotation.FullTextField;
 import org.hibernate.search.mapper.pojo.mapping.definition.annotation.Indexed;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import io.quarkus.hibernate.orm.panache.PanacheEntity;
 
@@ -327,7 +329,7 @@ public class Book extends PanacheEntity {
     public String title;
 
     @ManyToOne
-    @JsonbTransient
+    @JsonIgnore
     public Author author;
 
     // Preexisting equals()/hashCode() methods
@@ -555,8 +557,7 @@ quarkus.hibernate-orm.sql-load-script=import.sql <4>
 quarkus.hibernate-search-orm.elasticsearch.version=7 <5>
 quarkus.hibernate-search-orm.elasticsearch.analysis.configurer=org.acme.hibernate.search.elasticsearch.config.AnalysisConfigurer <6>
 quarkus.hibernate-search-orm.schema-management.strategy=drop-and-create <7>
-quarkus.hibernate-search-orm.elasticsearch.schema-management.required-status=yellow <8>
-quarkus.hibernate-search-orm.automatic-indexing.synchronization.strategy=sync <9>
+quarkus.hibernate-search-orm.automatic-indexing.synchronization.strategy=sync <8>
 ----
 <1> We won't use SSL so we disable it to have a more compact native executable.
 <2> Let's create a PostgreSQL datasource.
@@ -567,10 +568,7 @@ It is important because there are significant differences between Elasticsearch 
 Since the mapping is created at build time to reduce startup time, Hibernate Search cannot connect to the cluster to automatically detect the version.
 <6> We point to the custom `AnalysisConfigurer` which defines the configuration of our analyzers and normalizers.
 <7> Obviously, this is not for production: we drop and recreate the index every time we start the application.
-<8> We consider the `yellow` status is sufficient to proceed after an index is created.
-This is for testing purposes with the Elasticsearch Docker container.
-It should not be used in production.
-<9> This means that we wait for the entities to be searchable before considering a write complete.
+<8> This means that we wait for the entities to be searchable before considering a write complete.
 On a production setup, the `write-sync` default will provide better performance.
 Using `sync` is especially important when testing as you need the entities to be searchable immediately.
 
@@ -623,7 +621,7 @@ docker run -it --rm=true --name elasticsearch_quarkus_test -p 9200:9200 -p 9300:
 
 [source,bash]
 ----
-docker run --ulimit memlock=-1:-1 -it --rm=true --memory-swappiness=0 --name postgresql_quarkus_test -e POSTGRES_USER=quarkus_test -e POSTGRES_PASSWORD=quarkus_test -e POSTGRES_DB=quarkus_test -p 5432:5432 postgres:11.3
+docker run --ulimit memlock=-1:-1 -it --rm=true --memory-swappiness=0 --name postgresql_quarkus_test -e POSTGRES_USER=quarkus_test -e POSTGRES_PASSWORD=quarkus_test -e POSTGRES_DB=quarkus_test -p 5432:5432 postgres:13.1
 ----
 
 == Time to play with your application

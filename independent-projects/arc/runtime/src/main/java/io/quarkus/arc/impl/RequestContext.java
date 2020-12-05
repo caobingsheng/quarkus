@@ -2,15 +2,16 @@ package io.quarkus.arc.impl;
 
 import io.quarkus.arc.ContextInstanceHandle;
 import io.quarkus.arc.InjectableBean;
-import io.quarkus.arc.InstanceHandle;
 import io.quarkus.arc.ManagedContext;
 import io.quarkus.arc.impl.EventImpl.Notifier;
 import java.lang.annotation.Annotation;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import javax.enterprise.context.BeforeDestroyed;
 import javax.enterprise.context.ContextNotActiveException;
@@ -51,28 +52,47 @@ class RequestContext implements ManagedContext {
 
     @SuppressWarnings("unchecked")
     @Override
-    public <T> T get(Contextual<T> contextual, CreationalContext<T> creationalContext) {
-        if (contextual == null) {
-            throw new IllegalArgumentException("Contextual parameter must not be null");
+    public <T> T getIfActive(Contextual<T> contextual, Function<Contextual<T>, CreationalContext<T>> creationalContextFun) {
+        Objects.requireNonNull(contextual, "Contextual must not be null");
+        Objects.requireNonNull(creationalContextFun, "CreationalContext supplier must not be null");
+        Map<Contextual<?>, ContextInstanceHandle<?>> ctx = currentContext.get();
+        if (ctx == null) {
+            // Thread local not set - context is not active!
+            return null;
         }
+        ContextInstanceHandle<T> instance = (ContextInstanceHandle<T>) ctx.get(contextual);
+        if (instance == null) {
+            CreationalContext<T> creationalContext = creationalContextFun.apply(contextual);
+            // Bean instance does not exist - create one if we have CreationalContext
+            instance = new ContextInstanceHandleImpl<T>((InjectableBean<T>) contextual,
+                    contextual.create(creationalContext), creationalContext);
+            ctx.put(contextual, instance);
+        }
+        return instance.get();
+    }
+
+    @Override
+    public <T> T get(Contextual<T> contextual, CreationalContext<T> creationalContext) {
+        T result = getIfActive(contextual,
+                CreationalContextImpl.unwrap(Objects.requireNonNull(creationalContext, "CreationalContext must not be null")));
+        if (result == null) {
+            // Thread local not set - context is not active!
+            throw new ContextNotActiveException();
+        }
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    @Override
+    public <T> T get(Contextual<T> contextual) {
+        Objects.requireNonNull(contextual, "Contextual must not be null");
         Map<Contextual<?>, ContextInstanceHandle<?>> ctx = currentContext.get();
         if (ctx == null) {
             // Thread local not set - context is not active!
             throw new ContextNotActiveException();
         }
         ContextInstanceHandle<T> instance = (ContextInstanceHandle<T>) ctx.get(contextual);
-        if (instance == null && creationalContext != null) {
-            // Bean instance does not exist - create one if we have CreationalContext
-            instance = new ContextInstanceHandleImpl<T>((InjectableBean<T>) contextual,
-                    contextual.create(creationalContext), creationalContext);
-            ctx.put(contextual, instance);
-        }
-        return instance != null ? instance.get() : null;
-    }
-
-    @Override
-    public <T> T get(Contextual<T> contextual) {
-        return get(contextual, null);
+        return instance == null ? null : instance.get();
     }
 
     @Override
@@ -146,11 +166,11 @@ class RequestContext implements ManagedContext {
                 } catch (Exception e) {
                     LOGGER.warn("An error occurred during delivery of the @BeforeDestroyed(RequestScoped.class) event", e);
                 }
-                for (InstanceHandle<?> instance : currentContext.values()) {
+                for (Map.Entry<Contextual<?>, ContextInstanceHandle<?>> entry : currentContext.entrySet()) {
                     try {
-                        instance.destroy();
+                        entry.getValue().destroy();
                     } catch (Exception e) {
-                        throw new IllegalStateException("Unable to destroy instance" + instance.get(), e);
+                        throw new IllegalStateException("Unable to destroy instance" + entry.getValue().get(), e);
                     }
                 }
                 // Fire an event with qualifier @Destroyed(RequestScoped.class) if there are any observers for it

@@ -2,6 +2,7 @@ package io.quarkus.it.keycloak;
 
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -200,7 +201,7 @@ public class CodeFlowTest {
             assertNotNull(sessionCookie);
             String idToken = getIdToken(sessionCookie);
 
-            //wait now so that we reach the refresh timeout
+            //wait now so that we reach the ID token timeout
             await().atMost(10, TimeUnit.SECONDS)
                     .pollInterval(Duration.ofSeconds(1))
                     .until(new Callable<Boolean>() {
@@ -267,24 +268,28 @@ public class CodeFlowTest {
             assertNotNull(sessionCookie);
             String idToken = getIdToken(sessionCookie);
 
-            //wait now so that we reach the refresh timeout
-            await().atMost(5, TimeUnit.SECONDS)
-                    .pollInterval(Duration.ofSeconds(1))
-                    .until(new Callable<Boolean>() {
-                        @Override
-                        public Boolean call() throws Exception {
-                            webClient.getOptions().setRedirectEnabled(false);
-                            WebResponse webResponse = webClient
-                                    .loadWebResponse(
-                                            new WebRequest(URI.create("http://localhost:8081/tenant-autorefresh").toURL()));
-                            assertEquals(200, webResponse.getStatusCode());
-                            assertTrue(webResponse.getContentAsString().contains("Tenant AutoRefresh"));
-                            // Should not redirect to OP but silently refresh token
-                            Cookie newSessionCookie = getSessionCookie(webClient, "tenant-autorefresh");
-                            assertNotNull(newSessionCookie);
-                            return !idToken.equals(getIdToken(newSessionCookie));
-                        }
-                    });
+            // Auto-refresh-interval is 30 secs so every call auto-refreshes the token
+            // Right now the original ID token is still valid but will be auto-refreshed
+            page = webClient.getPage("http://localhost:8081/tenant-autorefresh");
+            assertTrue(page.getBody().asText().contains("Tenant AutoRefresh"));
+            sessionCookie = getSessionCookie(webClient, "tenant-autorefresh");
+            assertNotNull(sessionCookie);
+            String nextIdToken = getIdToken(sessionCookie);
+            assertNotEquals(idToken, nextIdToken);
+            idToken = nextIdToken;
+
+            //wait now so that we reach the ID token timeout
+            await().atLeast(6, TimeUnit.SECONDS);
+
+            // ID token has expired, must be refreshed, auto-refresh-interval must not cause
+            // an auto-refresh loop even though it is larger than the ID token lifespan
+            page = webClient.getPage("http://localhost:8081/tenant-autorefresh");
+            assertTrue(page.getBody().asText().contains("Tenant AutoRefresh"));
+            sessionCookie = getSessionCookie(webClient, "tenant-autorefresh");
+            assertNotNull(sessionCookie);
+            nextIdToken = getIdToken(sessionCookie);
+            assertNotEquals(idToken, nextIdToken);
+
             webClient.getCookieManager().clearCookies();
         }
     }
@@ -440,9 +445,9 @@ public class CodeFlowTest {
 
     @Test
     public void testAuthenticationCompletionFailedNoStateCookie() throws IOException, InterruptedException {
-        // tenant-3 configuration uses a '/some/other/path' redirect parameter which does not have the same root
+        // tenant-3 configuration uses a '/web-app3' redirect parameter which does not have the same root
         // as the original request which is 'web-app', as a result, when the user is returned back to Quarkus
-        // to '/some/other/path' no state cookie is detected.
+        // to '/web-app3' no state cookie is detected.
         try (final WebClient webClient = createWebClient()) {
             HtmlPage page = webClient.getPage("http://localhost:8081/web-app/callback-before-redirect?tenantId=tenant-3");
             assertEquals("Log in to quarkus", page.getTitleText());
@@ -468,7 +473,7 @@ public class CodeFlowTest {
         // When the user is redirected back, CustomTenantResolver will resolve a 'tenant-1' configuration with
         // a redirect_uri '/web-app/callback-after-redirect' which will cause a code to token exchange failure
         try (final WebClient webClient = createWebClient()) {
-            HtmlPage page = webClient.getPage("http://localhost:8081/web-app/callback-before-redirect?tenantId");
+            HtmlPage page = webClient.getPage("http://localhost:8081/web-app/callback-before-wrong-redirect");
             assertEquals("Log in to quarkus", page.getTitleText());
 
             HtmlForm loginForm = page.getForms().get(0);
@@ -644,7 +649,7 @@ public class CodeFlowTest {
     }
 
     @Test
-    public void testAccessAndRefreshTokenInjectionWithoutIndexHtmlWithQuery() throws Exception {
+    public void testAccessAndRefreshTokenInjectionWithQuery() throws Exception {
         try (final WebClient webClient = createWebClient()) {
             HtmlPage page = webClient.getPage("http://localhost:8081/web-app/refresh-query?a=aValue");
             assertEquals("/web-app/refresh-query?a=aValue", getStateCookieSavedPath(webClient, null));
@@ -664,17 +669,28 @@ public class CodeFlowTest {
     }
 
     @Test
-    public void testXhrRequest() throws IOException, InterruptedException {
-        try (final WebClient webClient = createWebClient()) {
-            try {
-                webClient.addRequestHeader("X-Requested-With", "XMLHttpRequest");
-                webClient.getPage("http://localhost:8081/tenant-xhr");
-                fail("499 status error is expected");
-            } catch (FailingHttpStatusCodeException ex) {
-                assertEquals(499, ex.getStatusCode());
-                assertEquals("OIDC", ex.getResponse().getResponseHeaderValue("WWW-Authenticate"));
-            }
+    public void testRedirectUriWithForwardedPrefix() throws IOException, InterruptedException {
+        //doTestRedirectUriWithForwardedPrefix("/service");
+        doTestRedirectUriWithForwardedPrefix("/service/");
+        //doTestRedirectUriWithForwardedPrefix("");
+        //doTestRedirectUriWithForwardedPrefix("/");
+        //doTestRedirectUriWithForwardedPrefix("//");
+    }
 
+    private void doTestRedirectUriWithForwardedPrefix(String prefix) throws IOException, InterruptedException {
+        try (final WebClient webClient = createWebClient()) {
+            webClient.getOptions().setRedirectEnabled(false);
+            webClient.addRequestHeader("X-Forwarded-Prefix", prefix);
+            WebResponse webResponse = webClient
+                    .loadWebResponse(new WebRequest(URI.create("http://localhost:8081/index.html").toURL()));
+            String loc = webResponse.getResponseHeaderValue("location");
+            String encodedPrefix;
+            if (prefix.isEmpty() || prefix.equals("/") || prefix.equals("//")) {
+                encodedPrefix = "%2F";
+            } else {
+                encodedPrefix = prefix.replaceAll("\\/", "%2F");
+            }
+            assertTrue(loc.contains("redirect_uri=http%3A%2F%2Flocalhost%3A8081" + encodedPrefix + "web-app"));
             webClient.getCookieManager().clearCookies();
         }
     }

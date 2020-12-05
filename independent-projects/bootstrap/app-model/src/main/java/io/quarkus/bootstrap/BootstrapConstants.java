@@ -17,6 +17,8 @@ public interface BootstrapConstants {
      */
     String TEST_TO_MAIN_MAPPINGS = "TEST_TO_MAIN_MAPPINGS";
 
+    String OUTPUT_SOURCES_DIR = "OUTPUT_SOURCES_DIR";
+
     @Deprecated
     String EXTENSION_PROPS_JSON_FILE_NAME = "quarkus-extension.json";
 
@@ -34,4 +36,9 @@ public interface BootstrapConstants {
     String EMPTY = "";
     String JAR = AppArtifactCoords.TYPE_JAR;
     String POM = AppArtifactCoords.TYPE_POM;
+
+    String PLATFORM_DESCRIPTOR_ARTIFACT_ID_SUFFIX = "-quarkus-platform-descriptor";
+    String PLATFORM_PROPERTIES_ARTIFACT_ID_SUFFIX = "-quarkus-platform-properties";
+
+    String PLATFORM_PROPERTY_PREFIX = "platform.";
 }

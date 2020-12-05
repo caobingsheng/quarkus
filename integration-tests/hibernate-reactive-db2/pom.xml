@@ -6,7 +6,6 @@
         <artifactId>quarkus-integration-tests-parent</artifactId>
         <groupId>io.quarkus</groupId>
         <version>999-SNAPSHOT</version>
-        <relativePath>../</relativePath>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
@@ -15,7 +14,7 @@
     <description>Hibernate Reactive related tests running with the DB2 database</description>
 
     <properties>
-        <db2.image>ibmcom/db2:11.5.0.0a</db2.image>
+        <db2.image>ibmcom/db2:11.5.4.0</db2.image>
         <reactive-db2.url>vertx-reactive:db2://localhost:50000/hreact</reactive-db2.url>
     </properties>
     <dependencies>
@@ -142,7 +141,7 @@
             <id>test-db2</id>
             <activation>
                 <property>
-                    <name>test-db2</name>
+                    <name>test-containers</name>
                 </property>
             </activation>
             <build>
@@ -189,9 +188,9 @@
                                     <goal>verify</goal>
                                 </goals>
                                 <configuration>
-                                    <systemProperties>
+                                    <systemPropertyVariables>
                                         <native.image.path>${project.build.directory}/${project.build.finalName}-runner</native.image.path>
-                                    </systemProperties>
+                                    </systemPropertyVariables>
                                 </configuration>
                             </execution>
                         </executions>
@@ -224,7 +223,7 @@
             <id>docker-db2</id>
             <activation>
                 <property>
-                    <name>docker</name>
+                    <name>start-containers</name>
                 </property>
             </activation>
             <properties>

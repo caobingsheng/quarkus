@@ -13,6 +13,7 @@ import java.lang.reflect.Modifier;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.time.Duration;
+import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -62,6 +63,7 @@ import io.quarkus.runtime.ObjectSubstitution;
 import io.quarkus.runtime.RuntimeValue;
 import io.quarkus.runtime.StartupContext;
 import io.quarkus.runtime.StartupTask;
+import io.quarkus.runtime.annotations.IgnoreProperty;
 import io.quarkus.runtime.annotations.RecordableConstructor;
 import io.quarkus.runtime.annotations.RelaxedValidation;
 
@@ -115,15 +117,15 @@ public class BytecodeRecorderImpl implements RecorderContext {
     private final Map<Class<?>, NonDefaultConstructorHolder> nonDefaultConstructors = new HashMap<>();
     private final String className;
 
-    private final String buildStepName;
-    private final String methodName;
+    private final Function<ClassOutput, ClassCreator> classCreatorFunction;
+    private final Function<ClassCreator, MethodCreator> methodCreatorFunction;
 
     private final List<ObjectLoader> loaders = new ArrayList<>();
 
     /**
      * the maximum number of instruction groups that can be added to a method. This is to limit the size of the method
      * so that the 65k limit is not reached.
-     *
+     * <p>
      * This is fairly arbitrary, as there is no fixed size for the instruction groups, but in practice this limit
      * seems to be fairly reasonable
      */
@@ -133,22 +135,57 @@ public class BytecodeRecorderImpl implements RecorderContext {
     private boolean loadComplete;
 
     public BytecodeRecorderImpl(boolean staticInit, String buildStepName, String methodName, String uniqueHash) {
-        this(Thread.currentThread().getContextClassLoader(), staticInit,
-                BASE_PACKAGE + buildStepName + "$" + methodName + uniqueHash, buildStepName, methodName);
+        this(
+                Thread.currentThread().getContextClassLoader(),
+                staticInit,
+                toClassName(buildStepName, methodName, uniqueHash),
+                classOutput -> {
+                    return startupTaskClassCreator(classOutput, toClassName(buildStepName, methodName, uniqueHash));
+                },
+                classCreator -> {
+                    return startupMethodCreator(buildStepName, methodName, classCreator);
+                });
+    }
+
+    private static MethodCreator startupMethodCreator(String buildStepName, String methodName, ClassCreator classCreator) {
+        MethodCreator mainMethod = classCreator.getMethodCreator("deploy", void.class, StartupContext.class);
+
+        // record the build step name
+        if ((buildStepName != null) && (methodName != null)) {
+            mainMethod.invokeVirtualMethod(ofMethod(StartupContext.class, "setCurrentBuildStepName", void.class, String.class),
+                    mainMethod.getMethodParam(0), mainMethod.load(buildStepName + "." + methodName));
+        }
+        return mainMethod;
+    }
+
+    private static ClassCreator startupTaskClassCreator(ClassOutput classOutput, String className) {
+        return ClassCreator.builder().classOutput(classOutput).className(className).superClass(Object.class)
+                .interfaces(StartupTask.class).build();
+    }
+
+    private static String toClassName(String buildStepName, String methodName, String uniqueHash) {
+        return BASE_PACKAGE + buildStepName + "$" + methodName + uniqueHash;
     }
 
     // visible for testing
     BytecodeRecorderImpl(ClassLoader classLoader, boolean staticInit, String className) {
-        this(classLoader, staticInit, className, null, null);
+        this(classLoader, staticInit, className,
+                classOutput -> {
+                    return startupTaskClassCreator(classOutput, className);
+                },
+                classCreator -> {
+                    return startupMethodCreator(null, null, classCreator);
+                });
     }
 
-    private BytecodeRecorderImpl(ClassLoader classLoader, boolean staticInit, String className, String buildStepName,
-            String methodName) {
+    public BytecodeRecorderImpl(ClassLoader classLoader, boolean staticInit, String className,
+            Function<ClassOutput, ClassCreator> classCreatorFunction,
+            Function<ClassCreator, MethodCreator> methodCreatorFunction) {
         this.classLoader = classLoader;
         this.staticInit = staticInit;
         this.className = className;
-        this.buildStepName = buildStepName;
-        this.methodName = methodName;
+        this.classCreatorFunction = classCreatorFunction;
+        this.methodCreatorFunction = methodCreatorFunction;
     }
 
     public boolean isEmpty() {
@@ -345,23 +382,23 @@ public class BytecodeRecorderImpl implements RecorderContext {
                                 + "() directly on an object returned from the bytecode recorder, you can only pass it back into the recorder as a parameter");
             }
         });
-        ProxyInstance instance = new ProxyInstance(proxyInstance, key);
-        return instance;
+        return new ProxyInstance(proxyInstance, key);
     }
 
     public String getClassName() {
         return className;
     }
 
-    public void writeBytecode(ClassOutput classOutput) {
-        ClassCreator file = ClassCreator.builder().classOutput(classOutput)
-                .className(className)
-                .superClass(Object.class).interfaces(StartupTask.class).build();
-        MethodCreator mainMethod = file.getMethodCreator("deploy", void.class, StartupContext.class);
+    private Map.Entry<ClassCreator, MethodCreator> prepareBytecodeWriting(ClassOutput classOutput) {
+        ClassCreator file = classCreatorFunction.apply(classOutput);
+        MethodCreator mainMethod = methodCreatorFunction.apply(file);
+        return new AbstractMap.SimpleEntry<>(file, mainMethod);
+    }
 
-        // record the build step name
-        mainMethod.invokeVirtualMethod(ofMethod(StartupContext.class, "setCurrentBuildStepName", void.class, String.class),
-                mainMethod.getMethodParam(0), mainMethod.load(buildStepName + "." + methodName));
+    public void writeBytecode(ClassOutput classOutput) {
+        Map.Entry<ClassCreator, MethodCreator> entry = prepareBytecodeWriting(classOutput);
+        ClassCreator file = entry.getKey();
+        MethodCreator mainMethod = entry.getValue();
 
         //now create instances of all the classes we invoke on and store them in variables as well
         Map<Class, DeferredArrayStoreParameter> classInstanceVariables = new HashMap<>();
@@ -1149,6 +1186,18 @@ public class BytecodeRecorderImpl implements RecorderContext {
         Set<String> handledProperties = new HashSet<>();
         Property[] desc = PropertyUtils.getPropertyDescriptors(param);
         for (Property i : desc) {
+            // check if the getter is ignored
+            if ((i.getReadMethod() != null) && (i.getReadMethod().getAnnotation(IgnoreProperty.class) != null)) {
+                continue;
+            }
+            // check if the matching field is ignored
+            try {
+                if (param.getClass().getDeclaredField(i.getName()).getAnnotation(IgnoreProperty.class) != null) {
+                    continue;
+                }
+            } catch (NoSuchFieldException ignored) {
+
+            }
             Integer ctorParamIndex = constructorParamNameMap.remove(i.name);
             if (i.getReadMethod() != null && i.getWriteMethod() == null && ctorParamIndex == null) {
                 try {
@@ -1235,8 +1284,8 @@ public class BytecodeRecorderImpl implements RecorderContext {
                         //check if there is actually a field with the name
                         try {
                             i.getReadMethod().getDeclaringClass().getDeclaredField(i.getName());
-                            throw new RuntimeException("Cannot serialise field " + i.getName() + " on object " + param
-                                    + " as the property is read only");
+                            throw new RuntimeException("Cannot serialise field '" + i.getName() + "' on object '" + param
+                                    + "' as the property is read only");
                         } catch (NoSuchFieldException e) {
                             //if there is no underlying field then we ignore the property
                         }
@@ -1321,6 +1370,10 @@ public class BytecodeRecorderImpl implements RecorderContext {
 
         //now handle accessible fields
         for (Field field : param.getClass().getFields()) {
+            // check if the field is ignored
+            if (field.getAnnotation(IgnoreProperty.class) != null) {
+                continue;
+            }
             if (!handledProperties.contains(field.getName())) {
                 Integer ctorParamIndex = constructorParamNameMap.remove(field.getName());
                 if ((ctorParamIndex != null || !Modifier.isFinal(field.getModifiers())) &&
@@ -1662,7 +1715,7 @@ public class BytecodeRecorderImpl implements RecorderContext {
     /**
      * A bytecode serialized value. This is an abstraction over ResultHandle, as ResultHandle
      * cannot span methods.
-     *
+     * <p>
      * Instances of DeferredParameter can be used in different methods
      */
     abstract class DeferredParameter {
@@ -1672,7 +1725,7 @@ public class BytecodeRecorderImpl implements RecorderContext {
         /**
          * The function that is called to read the value for use. This may be by reading the value from the Object[]
          * array, or is may be a direct ldc instruction in the case of primitives.
-         *
+         * <p>
          * Code in this method is run in a single instruction group, so large objects should be serialized in the
          * {@link #doPrepare(MethodContext)} method instead
          * <p>

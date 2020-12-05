@@ -6,12 +6,11 @@
         <artifactId>quarkus-elasticsearch-rest-client-common-parent</artifactId>
         <groupId>io.quarkus</groupId>
         <version>999-SNAPSHOT</version>
-        <relativePath>../</relativePath>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>quarkus-elasticsearch-rest-client-common-deployment</artifactId>
-    <name>Quarkus - Elasticsearch REST client - Deployment</name>
+    <name>Quarkus - Elasticsearch REST client common - Deployment</name>
 
     <dependencies>
         <dependency>

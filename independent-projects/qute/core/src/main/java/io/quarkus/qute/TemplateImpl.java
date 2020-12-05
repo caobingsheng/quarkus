@@ -1,9 +1,9 @@
 package io.quarkus.qute;
 
 import io.smallrye.mutiny.Multi;
+import io.smallrye.mutiny.Uni;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutionException;
@@ -31,7 +31,7 @@ class TemplateImpl implements Template {
     }
 
     @Override
-    public Set<Expression> getExpressions() {
+    public List<Expression> getExpressions() {
         return root.getExpressions();
     }
 
@@ -77,6 +77,11 @@ class TemplateImpl implements Template {
                             emitter.fail(f);
                         }
                     }));
+        }
+
+        @Override
+        public Uni<String> createUni() {
+            return Uni.createFrom().completionStage(this::renderAsync);
         }
 
         @Override

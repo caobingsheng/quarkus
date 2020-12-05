@@ -242,8 +242,8 @@ final class ClassConfigPropertiesUtil {
                 AnnotationInstance configPropertyAnnotation = field.annotation(DotNames.CONFIG_PROPERTY);
                 if (configPropertyAnnotation != null) {
                     AnnotationValue configPropertyDefaultValue = configPropertyAnnotation.value("defaultValue");
-                    if ((configPropertyDefaultValue == null)
-                            || configPropertyDefaultValue.asString().equals(ConfigProperty.UNCONFIGURED_VALUE)) {
+                    if ((configPropertyDefaultValue != null)
+                            && !configPropertyDefaultValue.asString().equals(ConfigProperty.UNCONFIGURED_VALUE)) {
                         LOGGER.warn(
                                 "'defaultValue' of '@ConfigProperty' is ignored when added to a field of a class annotated with '@ConfigProperties'. Offending field is '"
                                         + field.name() + "' of class '" + field.declaringClass().toString() + "'");
@@ -420,8 +420,10 @@ final class ClassConfigPropertiesUtil {
             createWriteValue(methodCreator, configObject, field, setter, useFieldAccess, setterValue);
 
         }
-        configPropertyBuildItemCandidates
-                .add(new ConfigPropertyBuildItemCandidate(field.name(), fullConfigName, fieldType));
+        if (field.type().kind() != Type.Kind.PRIMITIVE) { // the JVM assigns primitive types a default even though it doesn't show up in the bytecode
+            configPropertyBuildItemCandidates
+                    .add(new ConfigPropertyBuildItemCandidate(field.name(), fullConfigName, fieldType));
+        }
     }
 
     private static String getFullConfigName(String prefixStr, ConfigProperties.NamingStrategy namingStrategy, FieldInfo field) {

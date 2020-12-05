@@ -66,9 +66,10 @@ Finally, we will create a *template instance*, set the data and render the outpu
 [source,java]
 ----
 // Renders <html><p>Hello Jim!</p></html>
-helloTemplate.data("name", "Jim").render(); <1> 
+helloTemplate.data("name", "Jim").render(); <1> <2>
 ----
 <1> `Template.data(String, Object)` is a convenient method that creates a template instance and sets the data in one step.
+<2> `TemplateInstance.render()` triggers a synchronous rendering, i.e. the current thread is blocked until the rendering is finished. However, there are also asynchronous ways to trigger the rendering and consume the results. For example there is the `TemplateInstance.renderAsync()` method that returns `CompletionStage<String>` or `TemplateInstance.createMulti()` that returns Mutiny's `Multi<String>`.
 
 So the workflow is simple: 
 
@@ -362,7 +363,7 @@ NOTE: The current context can be accessed via the implicit binding `this`.
 
 |Logical OR 
 |Outputs `true` if any of the parts is not `falsy` as described in the <<if_section>>. The parameter is only evaluated if needed.
-|`{person.isActive || person.hasStyle}`
+|`{person.isActive \|\| person.hasStyle}`
 |===
 
 TIP: The condition in a ternary operator evaluates to `true` if the value is not considered `falsy` as described in the <<if_section>>.
@@ -415,7 +416,7 @@ class Item {
 }
 ----
 
-NOTE: Virtual methods are usually evaluated by value resolvers generated for <<template_extension_methods,@TemplateExtension methods>>, <<template_data,@TemplateData>> or classes used in <<parameter_declarations,parameter declarations>>. However, a custom value resolver that is not backed by any Java class/method can be registered as well.
+NOTE: Virtual methods are usually evaluated by value resolvers generated for <<template_extension_methods,@TemplateExtension methods>>, <<template_data,@TemplateData>> or classes used in <<typesafe_expressions,parameter declarations>>. However, a custom value resolver that is not backed by any Java class/method can be registered as well.
 
 A virtual method with single parameter can be called using the infix notation:
 
@@ -619,6 +620,97 @@ You can also add any number of `else` blocks:
 {/if}
 ----
 
+[[when_section]]
+==== When/Switch Section
+
+This section is similar to Java's `switch` or Kotlin's `when` constructs.
+It matches a _tested value_ against all blocks sequentially until a condition is satisfied.
+The first matching block is executed.
+All other blocks are ignored (this behavior differs to the Java `switch` where a `break` statement is necessary).
+
+.Example using the `when`/`is` name aliases
+[source]
+----
+{#when items.size}
+  {#is 1} <1>
+    There is exactly one item!
+  {#is > 10} <2>
+    There are more than 10 items!
+  {#else} <3>
+    There are 2 -10 items!
+{/when}
+----
+<1> If there is exactly one parameter it's tested for equality.
+<2> It's possible to use <<when_operators,an operator>> to specify the matching logic. Unlike in the <<if_section>> nested operators are not supported.
+<3> `else` is block is executed if no other block matches the value.
+
+.Example using the `switch`/`case` name aliases
+[source]
+----
+{#switch person.name}
+  {#case 'John'} <1>
+    Hey John!
+  {#case 'Mary'} <1>
+    Hey Mary!
+{/switch}
+----
+<1> `case` is an alias for `is`.
+
+A tested value that resolves to an enum is handled specifically.
+The parameters of an `is`/`case` block are not evaluated as expressions but compared with the result of `toString()` invocation upon the tested value.
+
+[source]
+----
+{#when machine.status}
+  {#is ON} 
+    It's running. <1>
+  {#is in OFF BROKEN}
+    It's broken or OFF. <2>
+{/when}
+----
+<1> This block is executed if `machine.status.toString().equals("ON")`.
+<2> This block is executed if  `machine.status.toString().equals("OFF")` or `machine.status.toString().equals("BROKEN")`.
+
+NOTE: An enum constant is validated if the tested value has a type information available and resolves to an enum type.
+
+The following operators are supported in `is`/`case` block conditions:
+
+[[when_operators]]
+
+|===
+|Operator |Aliases |Example
+
+|not equal 
+|`!=`, `not`, `ne` 
+|`{#is not 10}`,`{#case != 10}`
+
+|greater than 
+|`gt`, `>`
+|`{#case le 10}`
+
+|greater than or equal to
+|`ge`, `>=`
+|`{#is >= 10}`
+
+|less than 
+|`lt`, `<`
+|`{#is < 10}`
+
+|less than or equal to
+|`le`, `\<=`
+|`{#case le 10}`
+
+|in
+|`in`
+|`{#is in 'foo' 'bar' 'baz'}`
+
+|not in
+|`ni`,`!in`
+|`{#is !in 1 2 3}`
+
+|===
+
+
 [[with_section]]
 ==== With Section
 
@@ -770,6 +862,50 @@ We can include the tag like this:
 ----
 <1> `item` is resolved to an iteration element and can be referenced using the `it` key in the tag template.
 <2> Tag content injected using the `nested-content` key in the tag template.
+
+=== Rendering Output
+
+`TemplateInstance` provides several ways to trigger the rendering and consume the result.
+The most straightforward approach is represented by `TemplateInstance.render()`.
+This method triggers a synchronous rendering, i.e. the current thread is blocked until the rendering is finished, and returns the output.
+By contrast, `TemplateInstance.renderAsync()` returns a `CompletionStage<String>` which is completed when the rendering is finished.
+
+.`TemplateInstance.renderAsync()` Example
+[source,java]
+----
+template.data(foo).renderAsync().whenComplete((result, failure) -> { <1>
+   if (failure == null) {
+      // consume the output...
+   } else {
+      // process failure...
+   }
+};
+----
+<1> Register a callback that is executed once the rendering is finished. 
+
+There are also two methods that return https://smallrye.io/smallrye-mutiny/[Mutiny] types.
+`TemplateInstance.createUni()` returns a new `Uni<String>` object.
+If you call `createUni()` the template is not rendered right away. 
+Instead, every time `Uni.subscribe()` is called a new rendering of the template is triggered.
+
+.`TemplateInstance.createUni()` Example
+[source,java]
+----
+template.data(foo).createUni().subscribe().with(System.out::println);
+----
+
+`TemplateInstance.createMulti()` returns a new `Multi<String>` object.
+Each item represents a part/chunk of the rendered template.
+Again, `createMulti()` does not trigger rendering. 
+Instead, every time a computation is triggered by a subscriber the template is rendered again.
+
+.`TemplateInstance.createMulti()` Example
+[source,java]
+----
+template.data(foo).createMulti().subscribe().with(buffer:append,buffer::flush);
+----
+
+NOTE: The template rendering is divided in two phases. During the first phase, which is asynchronous, all expressions in the template are resolved and a _result tree_ is built. In the second phase, which is synchronous, the result tree is _materialized_, i.e. one by one the result nodes emit chunks that are consumed/buffered by the specific consumer.
 
 === Engine Configuration
 
@@ -960,7 +1096,7 @@ public class ItemResource {
 }
 ----
 <1> Declare a method that gives us a `TemplateInstance` for `templates/ItemResource/item.html` and declare its `Item item` parameter so we can validate the template.
-<2> The `item` parameter is automatically turned into a <<parameter_declarations,parameter declaration>> and so all expressions that reference this name will be validated.
+<2> The `item` parameter is automatically turned into a <<typesafe_expressions,parameter declaration>> and so all expressions that reference this name will be validated.
 <3> Make the `Item` object accessible in the template.
  
 You can also declare a top-level Java class annotated with `@CheckedTemplate`:
@@ -979,7 +1115,7 @@ public class Templates {
     public static native TemplateInstance hello(String name); <1>
 }
 ----
-<1> This declares a template with path `templates/hello.txt`. The `name` parameter is automatically turned into a  <<parameter_declarations,parameter declaration>> and so all expressions that reference this name will be validated.
+<1> This declares a template with path `templates/hello.txt`. The `name` parameter is automatically turned into a  <<typesafe_expressions,parameter declaration>> and so all expressions that reference this name will be validated.
 
 Then declare one `public static native TemplateInstance method();` per template file.
 Use those static methods to build your template instances:
